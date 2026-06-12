@@ -47,6 +47,7 @@ local guiService = cloneref(game:GetService('GuiService'))
 local groupService = cloneref(game:GetService('GroupService'))
 local textChatService = cloneref(game:GetService('TextChatService'))
 local contextService = cloneref(game:GetService('ContextActionService'))
+local collectionService = cloneref(game:GetService('CollectionService'))
 local coreGui = cloneref(game:GetService('CoreGui'))
 
 local isnetworkowner = identifyexecutor and table.find({'AWP', 'Nihon'}, ({identifyexecutor()})[1]) and isnetworkowner or function()
@@ -8276,17 +8277,16 @@ run(function()
 	InfiniteJump = vape.Categories.Utility:CreateModule({
 		Name = 'InfiniteJump',
 		Function = function(callback)
-			if not callback then return end
+			if callback then
+				InfiniteJump:Clean(inputService.JumpRequest:Connect(function()
+					if not entitylib.isAlive then return end
+					local character = lplr.Character
+					if not character then return end
+					local humanoid = character:FindFirstChildOfClass('Humanoid')
+					if not humanoid then return end
+					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+				end))
+			end
 		end
 	})
-
-	InfiniteJump:Clean(inputService.JumpRequest:Connect(function()
-		if not InfiniteJump.Enabled then return end
-		if not entitylib.isAlive then return end
-		local character = lplr.Character
-		if not character then return end
-		local humanoid = character:FindFirstChildOfClass('Humanoid')
-		if not humanoid then return end
-		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-	end))
 end)
