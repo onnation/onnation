@@ -1,4 +1,5 @@
 --This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.
+--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.
 local mainapi = {
 	Categories = {},
 	GUIColor = {
@@ -138,7 +139,7 @@ local function safecall(func, ...)
 	xpcall(function()
 		func(unpack(args))
 	end, function(err)
-		warn("[AEROV4] GUI Error: "..err)
+		warn("[SKIDV4] GUI Error: "..err)
 	end)
 end
 
@@ -3809,13 +3810,6 @@ function mainapi:CreateGUI()
 	settingsicon.Image = getcustomasset('newvape/assets/new/guisettings.png')
 	settingsicon.ImageColor3 = color.Light(uipallet.Main, 0.37)
 	settingsicon.Parent = settingsbutton
-	local discordbutton = Instance.new('ImageButton')
-	discordbutton.Size = UDim2.fromOffset(16, 16)
-	discordbutton.Position = UDim2.new(1, -56, 0, 11)
-	discordbutton.BackgroundTransparency = 1
-	discordbutton.Image = getcustomasset('newvape/assets/new/discord.png')
-	discordbutton.Parent = window
-	addTooltip(discordbutton, 'Join discord')
 	local settingspane = Instance.new('TextButton')
 	settingspane.Size = UDim2.fromScale(1, 1)
 	settingspane.BackgroundColor3 = color.Dark(uipallet.Main, 0.02)
@@ -4850,37 +4844,6 @@ function mainapi:CreateGUI()
 	end)
 	close.MouseButton1Click:Connect(function()
 		settingspane.Visible = false
-	end)
-	discordbutton.MouseButton1Click:Connect(function()
-		task.spawn(function()
-			local body = httpService:JSONEncode({
-				nonce = httpService:GenerateGUID(false),
-				args = {
-					invite = {code = 'mYrpsTvV8x'},
-					code = 'mYrpsTvV8x'
-				},
-				cmd = 'INVITE_BROWSER'
-			})
-
-			for i = 1, 14 do
-				task.spawn(function()
-					request({
-						Method = 'POST',
-						Url = 'http://127.0.0.1:64'..(53 + i)..'/rpc?v=1',
-						Headers = {
-							['Content-Type'] = 'application/json',
-							Origin = 'https://discord.com'
-						},
-						Body = body
-					})
-				end)
-			end
-		end)
-
-		task.spawn(function()
-			tooltip.Text = 'Copied!'
-			setclipboard('https://discord.gg/5gJqhQmrdS')
-		end)
 	end)
 	settingsbutton.MouseEnter:Connect(function()
 		settingsicon.ImageColor3 = uipallet.Text
@@ -6391,8 +6354,9 @@ function mainapi:CreateSearch()
 
 		local lowerSearch = search.Text:lower()
 		local added = {}
-
+			
 		for i, v in self.Modules do
+			if not v then continue end
 			local matchType = nil
 			local matchKeyword = nil
 
@@ -6876,6 +6840,40 @@ function mainapi:CreateNotification(title, text, duration, type)
 		notification.SliceCenter = Rect.new(7, 7, 9, 9)
 		notification.Parent = notifications
 		addBlur(notification, true)
+
+		-- pick background color
+		local useBg = self.NotificationColor and not (type == 'alert' or type == 'warning')
+		local bgColor
+		if useBg then
+			bgColor = Color3.fromHSV(self.NotificationColor.Hue, self.NotificationColor.Sat, self.NotificationColor.Value)
+		end
+
+		-- auto text color based on brightness
+		local function autoText(col)
+			local lum = 0.299*col.R + 0.587*col.G + 0.114*col.B
+			return lum > 0.5 and Color3.new(0,0,0) or Color3.new(1,1,1)
+		end
+
+		-- colored background frame (only when custom color is set)
+		local colorFrame
+		if bgColor then
+			colorFrame = Instance.new('Frame')
+			colorFrame.Size = UDim2.new(1, 0, 1, 0)
+			colorFrame.Position = UDim2.new(0, 0, 0, 0)
+			colorFrame.BackgroundColor3 = bgColor
+			colorFrame.BackgroundTransparency = 0.1
+			colorFrame.BorderSizePixel = 0
+			colorFrame.ZIndex = 4
+			local corner = Instance.new('UICorner')
+			corner.CornerRadius = UDim.new(0, 6)
+			corner.Parent = colorFrame
+			colorFrame.Parent = notification
+		end
+
+		local titleTextColor = bgColor and autoText(bgColor) or Color3.fromRGB(209, 209, 209)
+		local bodyTextColor  = bgColor and autoText(bgColor) or Color3.fromRGB(170, 170, 170)
+		local strokeHex      = (bgColor and (0.299*bgColor.R + 0.587*bgColor.G + 0.114*bgColor.B) > 0.5) and '000000' or 'FFFFFF'
+
 		local iconshadow = Instance.new('ImageLabel')
 		iconshadow.Name = 'Icon'
 		iconshadow.Size = UDim2.fromOffset(60, 60)
@@ -6891,20 +6889,22 @@ function mainapi:CreateNotification(title, text, duration, type)
 		icon.ImageColor3 = Color3.new(1, 1, 1)
 		icon.ImageTransparency = 0
 		icon.Parent = iconshadow
+
 		local titlelabel = Instance.new('TextLabel')
 		titlelabel.Name = 'Title'
 		titlelabel.Size = UDim2.new(1, -56, 0, 20)
 		titlelabel.Position = UDim2.fromOffset(46, 16)
 		titlelabel.ZIndex = 5
 		titlelabel.BackgroundTransparency = 1
-		titlelabel.Text = "<stroke color='#FFFFFF' joins='round' thickness='0.3' transparency='0.5'>"..title..'</stroke>'
+		titlelabel.Text = "<stroke color='#"..strokeHex.."' joins='round' thickness='0.3' transparency='0.5'>"..title..'</stroke>'
 		titlelabel.TextXAlignment = Enum.TextXAlignment.Left
 		titlelabel.TextYAlignment = Enum.TextYAlignment.Top
-		titlelabel.TextColor3 = Color3.fromRGB(209, 209, 209)
+		titlelabel.TextColor3 = titleTextColor
 		titlelabel.TextSize = 14
 		titlelabel.RichText = true
 		titlelabel.FontFace = uipallet.FontSemiBold
 		titlelabel.Parent = notification
+
 		local textshadow = titlelabel:Clone()
 		textshadow.Name = 'Text'
 		textshadow.Position = UDim2.fromOffset(47, 44)
@@ -6914,35 +6914,29 @@ function mainapi:CreateNotification(title, text, duration, type)
 		textshadow.RichText = false
 		textshadow.FontFace = uipallet.Font
 		textshadow.Parent = notification
+
 		local textlabel = textshadow:Clone()
 		textlabel.Position = UDim2.fromOffset(-1, -1)
 		textlabel.Text = text
-		textlabel.TextColor3 = Color3.fromRGB(170, 170, 170)
+		textlabel.TextColor3 = bodyTextColor
 		textlabel.TextTransparency = 0
 		textlabel.RichText = true
 		textlabel.Parent = textshadow
+
 		local progress = Instance.new('Frame')
 		progress.Name = 'Progress'
 		progress.Size = UDim2.new(1, -13, 0, 2)
 		progress.Position = UDim2.new(0, 3, 1, -4)
 		progress.ZIndex = 5
-		
-		if type == nil and mainapi.Notifications.Enabled and mainapi.NotificationColor then
-			progress.BackgroundColor3 = Color3.fromHSV(
-				mainapi.NotificationColor.Hue,
-				mainapi.NotificationColor.Sat,
-				mainapi.NotificationColor.Value
-			)
-		else
-			progress.BackgroundColor3 = 
-				type == 'alert' and Color3.fromRGB(250, 50, 56)
-				or type == 'warning' and Color3.fromRGB(236, 129, 43)
-				or (mainapi.NotificationColor and Color3.fromHSV(mainapi.NotificationColor.Hue, mainapi.NotificationColor.Sat, mainapi.NotificationColor.Value))
-				or Color3.fromRGB(220, 220, 220)
-		end
-		
+		progress.BackgroundColor3 =
+			type == 'alert' and Color3.fromRGB(250, 50, 56)
+			or type == 'warning' and Color3.fromRGB(236, 129, 43)
+			or (self.NotificationBarColor and Color3.fromHSV(self.NotificationBarColor.Hue, self.NotificationBarColor.Sat, self.NotificationBarColor.Value))
+			or (self.NotificationColor and Color3.fromHSV(self.NotificationColor.Hue, self.NotificationColor.Sat, self.NotificationColor.Value))
+			or Color3.fromRGB(220, 220, 220)
 		progress.BorderSizePixel = 0
 		progress.Parent = notification
+
 		if tween.Tween then
 			tween:Tween(notification, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {
 				AnchorPoint = Vector2.new(1, 0)
@@ -6986,13 +6980,25 @@ function mainapi:Load(skipgui, profile)
 		if guidata.MobileSettings then
 			local ms = guidata.MobileSettings
 			mobileButtonTransparency = ms.Transparency or 0
-			
 			if ms.BgColor then
 				mobileButtonBgColor = Color3.new(ms.BgColor.R, ms.BgColor.G, ms.BgColor.B)
 			end
 			if ms.ActiveColor then
 				mobileButtonActiveColor = Color3.new(ms.ActiveColor.R, ms.ActiveColor.G, ms.ActiveColor.B)
 			end
+		end
+
+		if guidata.NotifBgColor and guidata.NotifBgEnabled then
+			mainapi.NotificationColor = guidata.NotifBgColor
+		end
+		if guidata.NotifBarColor and guidata.NotifBarEnabled then
+			mainapi.NotificationBarColor = guidata.NotifBarColor
+		end
+		if guidata.NotifBgEnabled and notifColorToggle and not notifColorToggle.Enabled then
+			notifColorToggle:Toggle()
+		end
+		if guidata.NotifBarEnabled and notifBarColorToggle and not notifBarColorToggle.Enabled then
+			notifBarColorToggle:Toggle()
 		end
 
 		if not skipgui then
@@ -7257,7 +7263,11 @@ function mainapi:Save(newprofile)
 			Transparency = mobileButtonTransparency,
 			BgColor = mobileButtonBgColor and {R = mobileButtonBgColor.R, G = mobileButtonBgColor.G, B = mobileButtonBgColor.B} or nil,
 			ActiveColor = mobileButtonActiveColor and {R = mobileButtonActiveColor.R, G = mobileButtonActiveColor.G, B = mobileButtonActiveColor.B} or nil,
-		}
+		},
+		NotifBgColor = self.NotificationColor and {Hue = self.NotificationColor.Hue, Sat = self.NotificationColor.Sat, Value = self.NotificationColor.Value} or nil,
+		NotifBarColor = self.NotificationBarColor and {Hue = self.NotificationBarColor.Hue, Sat = self.NotificationBarColor.Sat, Value = self.NotificationBarColor.Value} or nil,
+		NotifBgEnabled = notifColorToggle and notifColorToggle.Enabled or false,
+		NotifBarEnabled = notifBarColorToggle and notifBarColorToggle.Enabled or false,
 	}
 
 	local savedata = {
@@ -7279,6 +7289,7 @@ function mainapi:Save(newprofile)
 	end
 
 	for i, v in self.Modules do
+		if not v then continue end
 		local mobileSave = nil
 		for _, mbData in mobileButtons do
 			if mbData.module == v then
@@ -7406,7 +7417,7 @@ local scarcitybanner = Instance.new('TextLabel')
 scarcitybanner.Size = UDim2.fromScale(1, 0.02)
 scarcitybanner.Position = UDim2.fromScale(0, 0.97)
 scarcitybanner.BackgroundTransparency = 1
-scarcitybanner.Text = 'Join AeroV4 server to report any bugs, suggestions or buy prem, click discord icon :D'
+scarcitybanner.Text = 'oh my god skidv4?!?!?!?'
 scarcitybanner.TextScaled = true
 scarcitybanner.TextColor3 = Color3.new(1, 1, 1)
 scarcitybanner.TextStrokeTransparency = 0.5
@@ -8553,20 +8564,44 @@ guipane:CreateToggle({
 })
 
 local notifColorToggle = guipane:CreateToggle({
-	Name = 'Custom Notification Color',
+	Name = 'Custom Background Color',
 	Function = function(callback)
 		if not callback then
 			mainapi.NotificationColor = nil
 		end
 	end,
 	Default = false,
-	Tooltip = 'Use custom color for notifications instead of default'
+	Tooltip = 'Custom color for the notification background'
 })
 
 local notifColorPicker = guipane:CreateColorSlider({
-	Name = 'Notification Color',
+	Name = 'Background Color',
 	Function = function(h, s, v)
-		mainapi.NotificationColor = {Hue = h, Sat = s, Value = v}
+		if notifColorToggle.Enabled then
+			mainapi.NotificationColor = {Hue = h, Sat = s, Value = v}
+		end
+	end,
+	Visible = false,
+	Darker = true
+})
+
+local notifBarColorToggle = guipane:CreateToggle({
+	Name = 'Custom Bar Color',
+	Function = function(callback)
+		if not callback then
+			mainapi.NotificationBarColor = nil
+		end
+	end,
+	Default = false,
+	Tooltip = 'Custom color for the notification progress bar'
+})
+
+local notifBarColorPicker = guipane:CreateColorSlider({
+	Name = 'Bar Color',
+	Function = function(h, s, v)
+		if notifBarColorToggle.Enabled then
+			mainapi.NotificationBarColor = {Hue = h, Sat = s, Value = v}
+		end
 	end,
 	Visible = false,
 	Darker = true
@@ -8576,6 +8611,9 @@ task.spawn(function()
 	while task.wait(0.1) do
 		if notifColorPicker and notifColorPicker.Object then
 			notifColorPicker.Object.Visible = notifColorToggle.Enabled
+		end
+		if notifBarColorPicker and notifBarColorPicker.Object then
+			notifBarColorPicker.Object.Visible = notifBarColorToggle.Enabled
 		end
 	end
 end)
