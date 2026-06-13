@@ -8279,6 +8279,7 @@ run(function()
 		Function = function(callback)
 			if callback then
 				InfiniteJump:Clean(inputService.JumpRequest:Connect(function()
+					if not InfiniteJump.Enabled then return end
 					if not entitylib.isAlive then return end
 					local character = lplr.Character
 					if not character then return end
