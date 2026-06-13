@@ -1,5 +1,3 @@
---This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.
---This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.
 local mainapi = {
 	Categories = {},
 	GUIColor = {
@@ -6841,20 +6839,16 @@ function mainapi:CreateNotification(title, text, duration, type)
 		notification.Parent = notifications
 		addBlur(notification, true)
 
-		-- pick background color
 		local useBg = self.NotificationColor and not (type == 'alert' or type == 'warning')
 		local bgColor
 		if useBg then
 			bgColor = Color3.fromHSV(self.NotificationColor.Hue, self.NotificationColor.Sat, self.NotificationColor.Value)
 		end
 
-		-- auto text color based on brightness
 		local function autoText(col)
 			local lum = 0.299*col.R + 0.587*col.G + 0.114*col.B
 			return lum > 0.5 and Color3.new(0,0,0) or Color3.new(1,1,1)
 		end
-
-		-- colored background frame (only when custom color is set)
 		local colorFrame
 		if bgColor then
 			colorFrame = Instance.new('Frame')
