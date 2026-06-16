@@ -1079,7 +1079,7 @@ run(function()
 		DragonFly = Knit.Controllers.VoidDragonController.flapWings,
 		DropItem = Knit.Controllers.ItemDropController.dropItemInHand,
 		EquipItem = safeGetProto(require(replicatedStorage.TS.entity.entities['inventory-entity']).InventoryEntity.equipItem, 3),
-		FireProjectile = debug.getupvalue(Knit.Controllers.ProjectileController.launchProjectileWithValues, 2),
+		FireProjectile = (Knit.Controllers.ProjectileController and Knit.Controllers.ProjectileController.launchProjectileWithValues) and debug.getupvalue(Knit.Controllers.ProjectileController.launchProjectileWithValues, 2) or nil,
 		GroundHit = Knit.Controllers.FallDamageController.KnitStart,
 		GuitarHeal = Knit.Controllers.GuitarController.performHeal,
 		HannahKill = safeGetProto(Knit.Controllers.HannahController.registerExecuteInteractions, 1),
@@ -1334,12 +1334,16 @@ run(function()
 		if lplr:GetAttribute('DenyBlockBreak') or not entitylib.isAlive then return end
 		local handler = bedwars.BlockController:getHandlerRegistry():getHandler(block.Name)
 		local cost, pos, target, path = math.huge, nil, nil, nil
+		local playerPos = entitylib.character.RootPart.Position
 
 		for _, v in (handler and handler:getContainedPositions(block) or {block.Position / 3}) do
 			local costFunc = useDistance and function(block, pos) return 1 end or nil
 			local dpos, dcost, dpath = calculatePath(block, v * 3, costFunc, BreakerAngle and BreakerAngle.Value or 360)
-			if dpos and dcost < cost then
-				cost, pos, target, path = dcost, dpos, v * 3, dpath
+			if dpos then
+				local selectCost = useDistance and (dpos - playerPos).Magnitude or dcost
+				if selectCost < cost then
+					cost, pos, target, path = selectCost, dpos, v * 3, dpath
+				end
 			end
 		end
 
@@ -9417,374 +9421,273 @@ end)
 	
 run(function()
 	local AutoBuy
-	local Sword
-	local Armor
-	local Upgrades
-	local TierCheck
-	local BedwarsCheck
-	local GUI
+	local ShopType
+	local GUICheck
+	local KeepBuying
 	local SmartCheck
-	local Custom = {}
-	local CustomPost = {}
-	local UpgradeToggles = {}
-	local Functions, id = {}
-	local Callbacks = {Custom, Functions, CustomPost}
-	local npctick = tick()
-	
-	local swords = {
-		'wood_sword',
-		'stone_sword',
-		'iron_sword',
-		'diamond_sword',
-		'emerald_sword'
-	}
-	
-	local armors = {
-		'none',
-		'leather_chestplate',
-		'iron_chestplate',
-		'diamond_chestplate',
-		'emerald_chestplate'
-	}
-	
-	local axes = {
-		'none',
-		'wood_axe',
-		'stone_axe',
-		'iron_axe',
-		'diamond_axe'
-	}
-	
-	local pickaxes = {
-		'none',
-		'wood_pickaxe',
-		'stone_pickaxe',
-		'iron_pickaxe',
-		'diamond_pickaxe'
-	}
-	
-	local function canBuy(item, currencytable, amount)
-		amount = amount or 1
-		if not currencytable[item.currency] then
-			local currency = getItem(item.currency)
-			currencytable[item.currency] = currency and currency.amount or 0
+	local KeepBuyingList
+	local BuyArmorToggle
+	local BuyAxeToggle
+	local BuyPickaxeToggle
+	local BuyProjectileToggle
+	local BreakSpeedToggle
+	local ArmorUpgradeToggle
+	local DamageToggle
+	local DiamondGenToggle
+	local TeamGenToggle
+	local BedBarrierToggle
+
+	local purchaseRemote
+	local function getPurchaseRemote()
+		if not purchaseRemote then
+			purchaseRemote = game:GetService("ReplicatedStorage").rbxts_include.node_modules["@rbxts"].net.out._NetManaged.BedwarsPurchaseItem
 		end
-		if item.ignoredByKit and table.find(item.ignoredByKit, store.equippedKit or '') then return false end
-		if item.lockedByForge or item.disabled then return false end
-		if item.require and item.require.teamUpgrade then
-			if (bedwars.Store:getState().Bedwars.teamUpgrades[item.require.teamUpgrade.upgradeId] or -1) < item.require.teamUpgrade.lowestTierIndex then
-				return false
-			end
-		end
-		return currencytable[item.currency] >= (item.price * amount)
+		return purchaseRemote
 	end
-	
-	local function buyItem(item, currencytable)
-		if not id then return end
-		notif('AutoBuy', 'Bought '..bedwars.ItemMeta[item.itemType].displayName, 3)
-		bedwars.Client:Get(remotes.BedwarsPurchaseItem):CallServerAsync({
-			shopItem = item,
-			shopId = id
-		}):andThen(function(suc)
-			if suc then
-				bedwars.SoundManager:playSound(bedwars.SoundList.BEDWARS_PURCHASE_ITEM)
-				bedwars.Store:dispatch({
-					type = 'BedwarsAddItemPurchased',
-					itemType = item.itemType
-				})
+
+	local function getResourceCount(currency)
+		local item = getItem(currency)
+		return item and item.amount or 0
+	end
+
+	local function playerOwns(itemType)
+		for _, item in store.inventory.inventory.items do
+			if item.itemType == itemType then return true end
+		end
+		if store.inventory.inventory.armor then
+			for _, v in pairs(store.inventory.inventory.armor) do
+				if type(v) == 'table' and v.itemType == itemType then return true end
 			end
+		end
+		return false
+	end
+
+	local function isNearShop(checkType)
+		if not GUICheck.Enabled then return true end
+		local _, items, upgrades = getShopNPC()
+		if checkType == 'item' then return items end
+		if checkType == 'upgrade' then return upgrades end
+		return false
+	end
+
+	local function buyItem(shopItem, shopId)
+		pcall(function()
+			getPurchaseRemote():InvokeServer({shopItem = shopItem, shopId = shopId})
 		end)
-		currencytable[item.currency] -= item.price
 	end
-	
-	local function buyUpgrade(upgradeType, currencytable)
-		if not Upgrades.Enabled then return end
-		local upgrade = bedwars.TeamUpgradeMeta[upgradeType]
-		local currentUpgrades = bedwars.Store:getState().Bedwars.teamUpgrades[lplr:GetAttribute('Team')] or {}
-		local currentTier = (currentUpgrades[upgradeType] or 0) + 1
-		local bought = false
-	
-		for i = currentTier, #upgrade.tiers do
-			local tier = upgrade.tiers[i]
-			if tier.availableOnlyInQueue and not table.find(tier.availableOnlyInQueue, store.queueType) then continue end
-	
-			if canBuy({currency = 'diamond', price = tier.cost}, currencytable) then
-				notif('AutoBuy', 'Bought '..(upgrade.name == 'Armor' and 'Protection' or upgrade.name)..' '..i, 3)
-				bedwars.Client:Get('RequestPurchaseTeamUpgrade'):CallServerAsync(upgradeType)
-				currencytable.diamond -= tier.cost
-				bought = true
-			else
-				break
-			end
-		end
-	
-		return bought
+
+	local function getShopData(itemType)
+		if not bedwars.Shop then return nil end
+		local ok, res = pcall(function()
+			return bedwars.Shop.getShopItem(itemType, lplr)
+		end)
+		return ok and res or nil
 	end
-	
-	local function buyTool(tool, tools, currencytable)
-		local bought, buyable = false
-		tool = tool and table.find(tools, tool.itemType) and table.find(tools, tool.itemType) + 1 or math.huge
-	
-		for i = tool, #tools do
-			local v = bedwars.Shop.getShopItem(tools[i], lplr)
-			if canBuy(v, currencytable) then
-				if SmartCheck.Enabled and bedwars.ItemMeta[tools[i]].breakBlock and i > 2 then
-					if Armor.Enabled then
-						local currentarmor = store.inventory.inventory.armor[2]
-						currentarmor = currentarmor and currentarmor ~= 'empty' and currentarmor.itemType or 'none'
-						if (table.find(armors, currentarmor) or 3) < 3 then break end
-					end
-					if Sword.Enabled then
-						if store.tools.sword and (table.find(swords, store.tools.sword.itemType) or 2) < 2 then break end
-					end
+
+	local armorTiers = {
+		'emerald_chestplate','emerald_leggings','emerald_boots',
+		'diamond_chestplate','diamond_leggings','diamond_boots',
+		'iron_chestplate','iron_leggings','iron_boots',
+		'leather_chestplate',
+	}
+	local axeTiers = {'emerald_axe','diamond_axe','iron_axe','stone_axe','wood_axe'}
+	local pickaxeTiers = {'emerald_pickaxe','diamond_pickaxe','iron_pickaxe','stone_pickaxe','wood_pickaxe'}
+
+	local function buyBestTier(tierList, shopId)
+		for _, itemType in ipairs(tierList) do
+			if SmartCheck.Enabled and playerOwns(itemType) then break end
+			local data = getShopData(itemType)
+			if data then
+				if getResourceCount(data.currency or 'iron') >= (data.price or math.huge) then
+					buyItem(data, shopId)
+					break
 				end
-				bought = true
-				buyable = v
 			end
-			if TierCheck.Enabled and v.nextTier then break end
 		end
-	
-		if buyable then
-			buyItem(buyable, currencytable)
-		end
-	
-		return bought
 	end
-	
-	AutoBuy = vape.Categories.Inventory:CreateModule({
+
+	local function buyProjectile(shopId)
+		local em = getResourceCount('emerald')
+		local ir = getResourceCount('iron')
+		local ownsAny = SmartCheck.Enabled and (playerOwns('headhunter') or playerOwns('wood_crossbow') or playerOwns('wood_bow'))
+		if ownsAny then return end
+
+		if em >= 24 then
+			buyItem({
+				lockAfterPurchase = true, itemType = "headhunter", price = 24,
+				currency = "emerald", amount = 1,
+				disabledInQueue = {"tnt_wars","bedwars_og_to4"}, category = "Combat",
+				spawnWithItems = {"headhunter"},
+				ignoredByKit = {"archer","flower_bee","falconer","nazar"}
+			}, shopId)
+		elseif em >= 7 then
+			buyItem({
+				disabledInQueue = {"tnt_wars","bedwars_og_to4"},
+				itemType = "wood_crossbow", price = 7,
+				superiorItems = {"headhunter"}, currency = "emerald",
+				category = "Combat", lockAfterPurchase = true,
+				ignoredByKit = {"archer","flower_bee","falconer","nazar"},
+				spawnWithItems = {"wood_crossbow"}, amount = 1
+			}, shopId)
+		elseif ir >= 24 then
+			buyItem({
+				ignoredByKit = {"flower_bee","falconer","nazar"},
+				itemType = "wood_bow", price = 24,
+				superiorItems = {"wood_crossbow","tactical_crossbow"},
+				currency = "iron", category = "Combat", lockAfterPurchase = true,
+				spawnWithItems = {"wood_bow"}, amount = 1
+			}, shopId)
+		end
+	end
+
+	local upgradeIds = {
+		BreakSpeed = 'BREAK_SPEED',
+		Armor      = 'ARMOR',
+		Damage     = 'DAMAGE',
+		DiamondGen = 'DIAMOND_GENERATOR',
+		TeamGen    = 'TEAM_GENERATOR',
+	}
+
+	local upgradeRemote = replicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("RequestPurchaseTeamUpgrade")
+
+	local function buyTeamUpgrade(upgradeType)
+		if not upgradeType then return end
+		pcall(function()
+			upgradeRemote:InvokeServer(upgradeType)
+		end)
+	end
+
+	local lastBedBarrierBuy = 0
+	local BED_BARRIER_DURATION = 180
+
+	local bedUpgradeRemote = replicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("RequestPurchaseBedTeamUpgrade")
+
+	local function buyBedBarrier()
+		local now = tick()
+		if now - lastBedBarrierBuy < BED_BARRIER_DURATION then return end
+		local ok = pcall(function()
+			bedUpgradeRemote:InvokeServer("bed_shield")
+			bedUpgradeRemote:InvokeServer("bed_alarm")
+		end)
+		if ok then
+			lastBedBarrierBuy = now
+		end
+	end
+
+	AutoBuy = vape.Categories.Utility:CreateModule({
 		Name = 'AutoBuy',
 		Function = function(callback)
 			if callback then
-				repeat task.wait() until store.queueType ~= 'bedwars_test'
-				if BedwarsCheck.Enabled and not store.queueType:find('bedwars') then return end
-	
-				local lastupgrades
-				AutoBuy:Clean(vapeEvents.InventoryAmountChanged.Event:Connect(function()
-					if (npctick - tick()) > 1 then npctick = tick() end
-				end))
-	
-				repeat
-					local npc, shop, upgrades, newid = getShopNPC()
-					id = newid
-					if GUI.Enabled then
-						if not (bedwars.AppController:isAppOpen('BedwarsItemShopApp') or bedwars.AppController:isAppOpen('TeamUpgradeApp')) then
-							npc = nil
-						end
-					end
-	
-					if npc and lastupgrades ~= upgrades then
-						if (npctick - tick()) > 1 then npctick = tick() end
-						lastupgrades = upgrades
-					end
-	
-					if npc and npctick <= tick() and store.matchState ~= 2 and store.shopLoaded then
-						local currencytable = {}
-						local waitcheck
-						for _, tab in Callbacks do
-							for _, callback in tab do
-								if callback(currencytable, shop, upgrades) then
-									waitcheck = true
+				task.spawn(function()
+					repeat task.wait() until store.shopLoaded or not AutoBuy.Enabled
+					if not AutoBuy.Enabled then return end
+					repeat
+						task.wait(0.5)
+						if not entitylib.isAlive then continue end
+						if ShopType.Value == 'Item Shop' then
+							if not isNearShop('item') then continue end
+							local sid = "1_item_shop"
+							if BuyArmorToggle.Enabled then buyBestTier(armorTiers, sid) end
+							if BuyAxeToggle.Enabled then buyBestTier(axeTiers, sid) end
+							if BuyPickaxeToggle.Enabled then buyBestTier(pickaxeTiers, sid) end
+							if BuyProjectileToggle.Enabled then buyProjectile(sid) end
+							if KeepBuying.Enabled then
+								for _, itemType in ipairs(KeepBuyingList.ListEnabled or {}) do
+									local data = getShopData(itemType)
+									if data then
+										if getResourceCount(data.currency or 'iron') >= (data.price or math.huge) then
+											if not SmartCheck.Enabled or not playerOwns(itemType) then
+												buyItem(data, sid)
+											end
+										end
+									end
 								end
-							end
-						end
-						npctick = tick() + (waitcheck and 0.4 or math.huge)
-					end
-	
-					task.wait(0.1)
-				until not AutoBuy.Enabled
-			else
-				npctick = tick()
-			end
-		end,
-		Tooltip = 'automatically buys items when you go near the shop'
-	})
-	Sword = AutoBuy:CreateToggle({
-		Name = 'Buy Sword',
-		Function = function(callback)
-			npctick = tick()
-			Functions[2] = callback and function(currencytable, shop)
-				if not shop then return end
-	
-				if store.equippedKit == 'dasher' then
-					swords = {
-						[1] = 'wood_dao',
-						[2] = 'stone_dao',
-						[3] = 'iron_dao',
-						[4] = 'diamond_dao',
-						[5] = 'emerald_dao'
-					}
-				elseif store.equippedKit == 'ice_queen' then
-					swords[5] = 'ice_sword'
-				elseif store.equippedKit == 'ember' then
-					swords[5] = 'infernal_saber'
-				elseif store.equippedKit == 'lumen' then
-					swords[5] = 'light_sword'
-				end
-	
-				return buyTool(store.tools.sword, swords, currencytable)
-			end or nil
-		end
-	})
-	Armor = AutoBuy:CreateToggle({
-		Name = 'Buy Armor',
-		Function = function(callback)
-			npctick = tick()
-			Functions[1] = callback and function(currencytable, shop)
-				if not shop then return end
-				local currentarmor = store.inventory.inventory.armor[2] ~= 'empty' and store.inventory.inventory.armor[2] or getBestArmor(1)
-				currentarmor = currentarmor and currentarmor.itemType or 'none'
-				return buyTool({itemType = currentarmor}, armors, currencytable)
-			end or nil
-		end,
-		Default = true
-	})
-	AutoBuy:CreateToggle({
-		Name = 'Buy Axe',
-		Function = function(callback)
-			npctick = tick()
-			Functions[3] = callback and function(currencytable, shop)
-				if not shop then return end
-				return buyTool(store.tools.wood or {itemType = 'none'}, axes, currencytable)
-			end or nil
-		end
-	})
-	AutoBuy:CreateToggle({
-		Name = 'Buy Pickaxe',
-		Function = function(callback)
-			npctick = tick()
-			Functions[4] = callback and function(currencytable, shop)
-				if not shop then return end
-				return buyTool(store.tools.stone, pickaxes, currencytable)
-			end or nil
-		end
-	})
-	Upgrades = AutoBuy:CreateToggle({
-		Name = 'Buy Upgrades',
-		Function = function(callback)
-			for _, v in UpgradeToggles do
-				v.Object.Visible = callback
-			end
-		end,
-		Default = true
-	})
-	local count = 0
-	for i, v in bedwars.TeamUpgradeMeta do
-		local toggleCount = count
-		table.insert(UpgradeToggles, AutoBuy:CreateToggle({
-			Name = 'Buy '..(v.name == 'Armor' and 'Protection' or v.name),
-			Function = function(callback)
-				npctick = tick()
-				Functions[5 + toggleCount + (v.name == 'Armor' and 20 or 0)] = callback and function(currencytable, shop, upgrades)
-					if not upgrades then return end
-					if v.disabledInQueue and table.find(v.disabledInQueue, store.queueType) then return end
-					return buyUpgrade(i, currencytable)
-				end or nil
-			end,
-			Darker = true,
-			Default = (i == 'ARMOR' or i == 'DAMAGE')
-		}))
-		count += 1
-	end
-	TierCheck = AutoBuy:CreateToggle({Name = 'Tier Check'})
-	BedwarsCheck = AutoBuy:CreateToggle({
-		Name = 'Only Bedwars',
-		Function = function()
-			if AutoBuy.Enabled then
-				AutoBuy:Toggle()
-				AutoBuy:Toggle()
-			end
-		end,
-		Default = true
-	})
-	GUI = AutoBuy:CreateToggle({Name = 'GUI check'})
-	SmartCheck = AutoBuy:CreateToggle({
-		Name = 'Smart check',
-		Default = true,
-		Tooltip = 'Buys iron armor before iron axe'
-	})
-	local KeepBuying = AutoBuy:CreateToggle({
-		Name = 'Keep Buying',
-		Tooltip = 'Always buys the set amount from item list, ignoring current inventory',
-		Function = function(callback)
-			if callback then
-				npctick = tick()
-			end
-		end
-	})
-	AutoBuy:CreateTextList({
-		Name = 'Item',
-		Placeholder = 'priority/item/amount/skip50',
-		Function = function(list)
-			table.clear(Custom)
-			table.clear(CustomPost)
-			for _, entry in list do
-				local tab = entry:split('/')
-				local ind = tonumber(tab[1])
-				if ind then
-					local isPost = tab[4] and tab[4]:lower():find('after')
-					local skipAmount = tab[4] and tonumber(tab[4]:match('%d+')) or nil
-					
-					(isPost and CustomPost or Custom)[ind] = function(currencytable, shop)
-						if not shop then return end
-						if not store.shopLoaded then return end
-						
-						local success, v = pcall(function()
-							return bedwars.Shop.getShopItem(tab[2], lplr)
-						end)
-						
-						if not success or not v then
-							return false
-						end
-						
-						local item = getItem(tab[2] == 'wool_white' and bedwars.Shop.getTeamWool(lplr:GetAttribute('Team')) or tab[2])
-						local currentAmount = item and item.amount or 0
-						local targetAmount = tonumber(tab[3])
-						
-						if tab[2] == 'arrow' and skipAmount then
-							local hasBow = getBow()
-							local hasCrossbow = getItem('crossbow')
-							local hasHeadhunter = getItem('headhunter_bow')
-							if not (hasBow or hasCrossbow or hasHeadhunter) then
-								return false
-							end
-						end
-						
-						if KeepBuying.Enabled then
-							local purchasesNeeded = math.ceil(targetAmount / v.amount)
-							
-							if purchasesNeeded > 0 and canBuy(v, currencytable, purchasesNeeded) then
-								for _ = 1, purchasesNeeded do
-									buyItem(v, currencytable)
-								end
-								return true
 							end
 						else
-							local needToBuy = math.max(0, targetAmount - currentAmount)
-							
-							if needToBuy <= 0 then
-								return false
-							end
-
-							if skipAmount and currentAmount >= skipAmount then
-								return false
-							end
-							
-							local purchasesNeeded = math.ceil(needToBuy / v.amount)
-							
-							if canBuy(v, currencytable, purchasesNeeded) then
-								for _ = 1, purchasesNeeded do
-									buyItem(v, currencytable)
-								end
-								return true
-							end
+							if not isNearShop('upgrade') then continue end
+							if BreakSpeedToggle.Enabled   then buyTeamUpgrade(upgradeIds.BreakSpeed) end
+							if ArmorUpgradeToggle.Enabled then buyTeamUpgrade(upgradeIds.Armor) end
+							if DamageToggle.Enabled        then buyTeamUpgrade(upgradeIds.Damage) end
+							if DiamondGenToggle.Enabled    then buyTeamUpgrade(upgradeIds.DiamondGen) end
+							if TeamGenToggle.Enabled       then buyTeamUpgrade(upgradeIds.TeamGen) end
+							if BedBarrierToggle.Enabled then buyBedBarrier() end
 						end
-						
-						return false
-					end
-				end
+					until not AutoBuy.Enabled
+				end)
 			end
+		end,
+		Tooltip = 'auto buys from item shop or team upgrade shop'
+	})
+
+	ShopType = AutoBuy:CreateDropdown({
+		Name = 'Shop Type',
+		List = {'Item Shop', 'Team Upgrade Shop'},
+		Function = function(val)
+			local isItem = val == 'Item Shop'
+			if BuyArmorToggle     then BuyArmorToggle.Object.Visible     = isItem end
+			if BuyAxeToggle       then BuyAxeToggle.Object.Visible       = isItem end
+			if BuyPickaxeToggle   then BuyPickaxeToggle.Object.Visible   = isItem end
+			if BuyProjectileToggle then BuyProjectileToggle.Object.Visible = isItem end
+			if BreakSpeedToggle   then BreakSpeedToggle.Object.Visible   = not isItem end
+			if ArmorUpgradeToggle then ArmorUpgradeToggle.Object.Visible = not isItem end
+			if DamageToggle       then DamageToggle.Object.Visible       = not isItem end
+			if DiamondGenToggle   then DiamondGenToggle.Object.Visible   = not isItem end
+			if TeamGenToggle      then TeamGenToggle.Object.Visible      = not isItem end
+			if BedBarrierToggle   then BedBarrierToggle.Object.Visible   = not isItem end
 		end
 	})
+
+	GUICheck = AutoBuy:CreateToggle({
+		Name = 'GUI Check',
+		Default = true,
+		Tooltip = 'only buys when you are near the shop'
+	})
+
+	KeepBuying = AutoBuy:CreateToggle({
+		Name = 'Keep Buying',
+		Default = false,
+		Tooltip = 'keeps re-buying items listed below (item shop only)',
+		Function = function(v)
+			if KeepBuyingList then KeepBuyingList.Object.Visible = v end
+			if SmartCheck     then SmartCheck.Object.Visible     = v end
+		end
+	})
+
+	SmartCheck = AutoBuy:CreateToggle({
+		Name = 'Smart Check',
+		Default = true,
+		Darker = true,
+		Tooltip = 'skips items you already own'
+	})
+
+	KeepBuyingList = AutoBuy:CreateTextList({
+		Name = 'Keep Buying List',
+		Placeholder = 'add item type e.g. iron_sword',
+		Darker = true
+	})
+
+	BuyArmorToggle     = AutoBuy:CreateToggle({Name = 'Buy Armor',      Default = true})
+	BuyAxeToggle       = AutoBuy:CreateToggle({Name = 'Buy Axe',        Default = false})
+	BuyPickaxeToggle   = AutoBuy:CreateToggle({Name = 'Buy Pickaxe',    Default = false})
+	BuyProjectileToggle = AutoBuy:CreateToggle({Name = 'Buy Projectile', Default = false})
+
+	BreakSpeedToggle   = AutoBuy:CreateToggle({Name = 'Break Speed',  Default = false})
+	ArmorUpgradeToggle = AutoBuy:CreateToggle({Name = 'Armor',        Default = false})
+	DamageToggle       = AutoBuy:CreateToggle({Name = 'Damage',       Default = false})
+	DiamondGenToggle   = AutoBuy:CreateToggle({Name = 'Diamond Gen',  Default = false})
+	TeamGenToggle      = AutoBuy:CreateToggle({Name = 'Team Gen',     Default = false})
+	BedBarrierToggle   = AutoBuy:CreateToggle({Name = 'Bed Barrier',  Default = false})
+
+	task.defer(function()
+		if BreakSpeedToggle   and BreakSpeedToggle.Object   then BreakSpeedToggle.Object.Visible   = false end
+		if ArmorUpgradeToggle and ArmorUpgradeToggle.Object then ArmorUpgradeToggle.Object.Visible = false end
+		if DamageToggle       and DamageToggle.Object       then DamageToggle.Object.Visible       = false end
+		if DiamondGenToggle   and DiamondGenToggle.Object   then DiamondGenToggle.Object.Visible   = false end
+		if TeamGenToggle      and TeamGenToggle.Object      then TeamGenToggle.Object.Visible      = false end
+		if BedBarrierToggle   and BedBarrierToggle.Object   then BedBarrierToggle.Object.Visible   = false end
+		if SmartCheck         and SmartCheck.Object         then SmartCheck.Object.Visible         = false end
+		if KeepBuyingList     and KeepBuyingList.Object     then KeepBuyingList.Object.Visible     = false end
+	end)
 end)
 	
 run(function()
@@ -10510,7 +10413,7 @@ run(function()
 	local originalAddGameNametag
 	local nametagHooked = false
 	
-	FPSBoost = vape.Categories.BoostFPS:CreateModule({
+	FPSBoost = vape.Categories.World:CreateModule({
 		Name = 'FPSBoost',
 		Function = function(callback)
 			if callback then
@@ -12397,7 +12300,7 @@ run(function()
 		end
 	end
 	
-	ShadowRemover = vape.Categories.BoostFPS:CreateModule({
+	ShadowRemover = vape.Categories.World:CreateModule({
 		Name = 'ShadowRemover',
 		Function = function(callback)
 			if callback then
@@ -12524,7 +12427,7 @@ run(function()
 		return count
 	end
 	
-	RemoveNeon = vape.Categories.BoostFPS:CreateModule({
+	RemoveNeon = vape.Categories.World:CreateModule({
 		Name = 'RemoveNeon',
 		Function = function(callback)
 			if callback then
@@ -12572,7 +12475,7 @@ run(function()
 	local MiloDisguse
 	local Blocks
 	local old
-	MiloDisguse = vape.Categories.Utility:CreateModule({
+	MiloDisguse = vape.Categories.Kits:CreateModule({
 		Name = "MiloDisguise",
 		Tooltip = 'allows you to change to any block u want to hide as',
 		Function = function(callback)
@@ -18183,7 +18086,7 @@ run(function()
 		table.insert(blockMonitorConnections, cleanupConn)
 	end
 	
-	PotatoMode = vape.Categories.BoostFPS:CreateModule({
+	PotatoMode = vape.Categories.World:CreateModule({
 		Name = 'PotatoMode',
 		Function = function(callback)
 			if callback then
@@ -19093,7 +18996,10 @@ run(function()
 
         local direction = CFrame.lookAt(origin, predicted).LookVector * 100
 
-        bedwars.Client:Get(remotes.FireProjectile).instance:InvokeServer(staff, nil, hasAttackSpirit and 'attack_spirit' or 'heal_spirit',shootFrom,origin,direction,httpService:GenerateGUID(),{drawDurationSeconds = 1, shotId = httpService:GenerateGUID(false)},workspace:GetServerTimeNow() - 0.045)
+        local _spiritRemote = bedwars.Client:Get(remotes.FireProjectile).instance
+        if _spiritRemote then
+            _spiritRemote:InvokeServer(staff, nil, hasAttackSpirit and 'attack_spirit' or 'heal_spirit',shootFrom,origin,direction,httpService:GenerateGUID(),{drawDurationSeconds = 1, shotId = httpService:GenerateGUID(false)},workspace:GetServerTimeNow() - 0.045)
+        end
 
         if playAnim.Enabled then
             bedwars.GameAnimationUtil:playAnimation(lplr.Character, bedwars.AnimationType.WIZARD_BALL_CAST )
@@ -21385,6 +21291,62 @@ run(function()
 end)
 
 run(function()
+    local BlockSelectorColor
+    local Fill
+    local Outline
+    local RunService = game:GetService("RunService")
+    local updateConnection
+
+    local function UpdateAllBoxes()
+        local fillColor = Color3.fromHSV(Fill.Hue, Fill.Sat, Fill.Value)
+        local outlineColor = Color3.fromHSV(Outline.Hue, Outline.Sat, Outline.Value)
+        local fillTrans = 1 - Fill.Opacity
+        local outlineTrans = 1 - Outline.Opacity
+        for _, box in ipairs(workspace:GetDescendants()) do
+            if box:IsA("SelectionBox") then
+                box.Color3 = outlineColor
+                box.Transparency = outlineTrans
+                box.SurfaceColor3 = fillColor
+                box.SurfaceTransparency = fillTrans
+            end
+        end
+    end
+
+    BlockSelectorColor = vape.Categories.Render:CreateModule({
+        Name = 'BlockSelectorColor',
+        Function = function(callback)
+            if callback then
+                updateConnection = RunService.RenderStepped:Connect(UpdateAllBoxes)
+                BlockSelectorColor:Clean(workspace.ChildAdded:Connect(function(v)
+                    local selector = v:FindFirstChild('SelectionBox') or v:WaitForChild('SelectionBox', 1)
+                    if selector then
+                        selector.Color3 = Color3.fromHSV(Outline.Hue, Outline.Sat, Outline.Value)
+                        selector.Transparency = 1 - Outline.Opacity
+                        selector.SurfaceColor3 = Color3.fromHSV(Fill.Hue, Fill.Sat, Fill.Value)
+                        selector.SurfaceTransparency = 1 - Fill.Opacity
+                    end
+                end))
+            else
+                if updateConnection then
+                    updateConnection:Disconnect()
+                    updateConnection = nil
+                end
+            end
+        end,
+        Tooltip = 'change your block placement outline color'
+    })
+
+    Fill = BlockSelectorColor:CreateColorSlider({
+        Name = 'Overlay Color',
+        DefaultOpacity = 0.5
+    })
+    Outline = BlockSelectorColor:CreateColorSlider({
+        Name = 'Outline Color',
+        DefaultOpacity = 1
+    })
+end)
+
+run(function()
     local trimType = 'trim_1'
     local trimColor = Color3.new(1,1,1)
     local trimCharConn
@@ -21616,54 +21578,79 @@ end)
 run(function()
     local outlineColor = Color3.new(1, 1, 1)
     local outlines = {}
-    local outlineConn
+    local connections = {}
+
+    local OutlineTargets
+
+    local function shouldOutline(ent)
+        if not OutlineTargets then return true end
+        if ent.Player and not OutlineTargets.Players.Enabled then return false end
+        if ent.NPC and not OutlineTargets.NPCs.Enabled then return false end
+        return true
+    end
+
+    local function removeOutline(ent)
+        if outlines[ent] then
+            outlines[ent]:Destroy()
+            outlines[ent] = nil
+        end
+    end
+
+    local function addOutline(ent)
+        if not shouldOutline(ent) then return end
+        if outlines[ent] then return end
+        local char = ent.Character
+        if not char then return end
+        local h = Instance.new('Highlight')
+        h.OutlineColor = outlineColor
+        h.FillTransparency = 1
+        h.OutlineTransparency = 0
+        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        h.Adornee = char
+        h.Parent = coreGui
+        outlines[ent] = h
+    end
+
+    local function refreshAll()
+        for ent in outlines do
+            if not shouldOutline(ent) then removeOutline(ent) end
+        end
+        for _, ent in entitylib.List do
+            addOutline(ent)
+        end
+    end
 
     local PlayerOutline = vape.Categories.Render:CreateModule({
         Name = 'PlayerOutline',
         Tooltip = 'adds outline to all players',
         Function = function(enabled)
             if enabled then
-                outlineConn = runService.Heartbeat:Connect(function()
-                    local entities = entitylib.AllPosition({
-                        Range = 999,
-                        Part = 'RootPart',
-                        Players = OutlineTargets and OutlineTargets.Players.Enabled or true,
-                        NPCs = OutlineTargets and OutlineTargets.NPCs.Enabled or true,
-                    })
-                    local seen = {}
-                    for _, ent in entities do
-                        local char = ent.Character
-                        if not char then continue end
-                        seen[ent] = true
-                        if not outlines[ent] then
-                            local h = Instance.new('Highlight')
-                            h.OutlineColor = outlineColor
-                            h.FillTransparency = 1
-                            h.OutlineTransparency = 0
-                            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                            h.Adornee = char
-                            h.Parent = coreGui
-                            outlines[ent] = h
-                        end
-                    end
-                    for ent, h in outlines do
-                        if not seen[ent] then
-                            h:Destroy()
-                            outlines[ent] = nil
-                        end
-                    end
+                for _, ent in entitylib.List do
+                    addOutline(ent)
+                end
+
+                connections[1] = entitylib.Events.EntityAdded:Connect(function(ent)
+                    task.wait(0.5)
+                    if not PlayerOutline.Enabled then return end
+                    addOutline(ent)
                 end)
+
+                connections[2] = entitylib.Events.EntityRemoved:Connect(removeOutline)
             else
-                if outlineConn then outlineConn:Disconnect() outlineConn = nil end
+                for _, c in connections do c:Disconnect() end
+                table.clear(connections)
                 for _, h in outlines do h:Destroy() end
                 table.clear(outlines)
             end
         end
     })
 
-	local OutlineTargets = PlayerOutline:CreateTargets({
+    OutlineTargets = PlayerOutline:CreateTargets({
         Players = true,
-        NPCs = true
+        NPCs = true,
+        Function = function()
+            if PlayerOutline.Enabled then refreshAll() end
+        end
     })
 
     PlayerOutline:CreateColorSlider({
@@ -21871,9 +21858,772 @@ run(function()
 end)
 
 run(function()
+    local AutoLani
+    local PlayerDropdown
+    local RefreshButton
+    local DelaySlider
+    local AutoBuyToggle
+    local GUICheck
+    local DelayBuySlider
+    local LimitItems
+	local HandCheck
+    local TargetModeDropdown
+    local HealthActivationToggle
+    local HealthThresholdSlider
+    local TeammateHealthToggle
+    local TeammateHealthSlider
+    local running = false
+    local buyRunning = false
+    local buyLoopThread = nil
+
+    local function isHoldingScepter()
+        if not entitylib.isAlive then return false end
+        local inventory = store.inventory
+        if inventory and inventory.inventory and inventory.inventory.hand then
+            local handItem = inventory.inventory.hand
+            if handItem and handItem.itemType == "scepter" then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function isPlayerAlive(player)
+        if not player or not player.Character then return false end
+        local humanoid = player.Character:FindFirstChild("Humanoid")
+        return humanoid and humanoid.Health > 0
+    end
+
+    local function isPlayerInVoid(player)
+        if not player or not player.Character then return true end
+        local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+        if rootPart then return rootPart.Position.Y < 0 end
+        return true
+    end
+
+    local function getTargetPlayer()
+        local myTeam = lplr:GetAttribute('Team')
+        if not myTeam then return nil end
+        local mode = TargetModeDropdown.Value
+
+        if mode == "Specific Player" then
+            local targetName = PlayerDropdown.Value
+            if not targetName or targetName == "" then return nil end
+            local targetPlayer = playersService:FindFirstChild(targetName)
+            if targetPlayer and targetPlayer:GetAttribute('Team') == myTeam then
+                if isPlayerAlive(targetPlayer) and not isPlayerInVoid(targetPlayer) then
+                    return targetPlayer
+                end
+            end
+            return nil
+
+        elseif mode == "Lowest Health" then
+            local lowestHealth = math.huge
+            local lowestPlayer = nil
+            for _, player in playersService:GetPlayers() do
+                if player ~= lplr and player:GetAttribute('Team') == myTeam then
+                    if isPlayerAlive(player) and not isPlayerInVoid(player) then
+                        local hp = getPlayerHealthPercent(player)
+                        if hp < lowestHealth and hp > 0 then
+                            lowestHealth = hp
+                            lowestPlayer = player
+                        end
+                    end
+                end
+            end
+            return lowestPlayer
+
+        elseif mode == "Closest" then
+            if not entitylib.isAlive then return nil end
+            local myPos = entitylib.character.RootPart.Position
+            local closestDist = math.huge
+            local closestPlayer = nil
+            for _, player in playersService:GetPlayers() do
+                if player ~= lplr and player:GetAttribute('Team') == myTeam then
+                    if isPlayerAlive(player) and not isPlayerInVoid(player) then
+                        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                            local dist = (player.Character.HumanoidRootPart.Position - myPos).Magnitude
+                            if dist < closestDist then
+                                closestDist = dist
+                                closestPlayer = player
+                            end
+                        end
+                    end
+                end
+            end
+            return closestPlayer
+
+        elseif mode == "Furthest" then
+            if not entitylib.isAlive then return nil end
+            local myPos = entitylib.character.RootPart.Position
+            local furthestDist = 0
+            local furthestPlayer = nil
+            for _, player in playersService:GetPlayers() do
+                if player ~= lplr and player:GetAttribute('Team') == myTeam then
+                    if isPlayerAlive(player) and not isPlayerInVoid(player) then
+                        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                            local dist = (player.Character.HumanoidRootPart.Position - myPos).Magnitude
+                            if dist > furthestDist then
+                                furthestDist = dist
+                                furthestPlayer = player
+                            end
+                        end
+                    end
+                end
+            end
+            return furthestPlayer
+
+        elseif mode == "Random" then
+            local valid = {}
+            for _, player in playersService:GetPlayers() do
+                if player ~= lplr and player:GetAttribute('Team') == myTeam then
+                    if isPlayerAlive(player) and not isPlayerInVoid(player) then
+                        table.insert(valid, player)
+                    end
+                end
+            end
+            if #valid > 0 then return valid[math.random(1, #valid)] end
+            return nil
+        end
+
+        return nil
+    end
+
+    local function shouldActivateByHealth()
+        if not HealthActivationToggle.Enabled then return true end
+        if not entitylib.isAlive then return false end
+        local myHp = getPlayerHealthPercent(lplr)
+        if myHp <= HealthThresholdSlider.Value then return true end
+        if TeammateHealthToggle.Enabled then
+            local target = getTargetPlayer()
+            if target then
+                local targetHp = getPlayerHealthPercent(target)
+                if targetHp <= TeammateHealthSlider.Value then return true end
+            end
+        end
+        return false
+    end
+
+    local function buyScepter()
+        pcall(function()
+            bedwars.Client:Get(remotes.BedwarsPurchaseItem).instance:InvokeServer({
+                shopItem = {
+                    currency = "iron",
+                    itemType = "scepter",
+                    amount = 1,
+                    price = 45,
+                    category = "Combat",
+                    requiresKit = {"paladin"},
+                    lockAfterPurchase = true
+                },
+                shopId = "1_item_shop"
+            })
+        end)
+    end
+
+    local function startBuyLoop()
+        if buyLoopThread then
+            task.cancel(buyLoopThread)
+            buyLoopThread = nil
+        end
+        buyRunning = true
+        buyLoopThread = task.spawn(function()
+            while buyRunning and AutoBuyToggle.Enabled and AutoLani.Enabled do
+                local canBuy = GUICheck.Enabled
+                    and bedwars.AppController:isAppOpen('BedwarsItemShopApp')
+                    or (not GUICheck.Enabled and getShopNPC())
+                if canBuy then
+                    buyScepter()
+                end
+                task.wait(DelayBuySlider.Value)
+            end
+            buyLoopThread = nil
+        end)
+    end
+
+    local function stopBuyLoop()
+        buyRunning = false
+        if buyLoopThread then
+            task.cancel(buyLoopThread)
+            buyLoopThread = nil
+        end
+    end
+
+    AutoLani = vape.Categories.Kits:CreateModule({
+        Name = "AutoLani",
+        Function = function(callback)
+            running = callback
+            if callback then
+                task.spawn(function()
+                    AutoLani:Clean(lplr:GetAttributeChangedSignal("PaladinStartTime"):Connect(function()
+                        if not running then return end
+                        if not shouldActivateByHealth() then return end
+                        if LimitItems.Enabled and not isHoldingScepter() then
+                            notif("AutoLani", "bru u aint even holding the scepter", 3)
+                            return
+                        end
+
+                        pcall(function()
+                            local handItem = store.inventory and store.inventory.inventory and store.inventory.inventory.hand
+                            if handItem then
+                                bedwars.Client:Get(remotes.ConsumeItem).instance:InvokeServer({ item = handItem.tool })
+                            end
+                        end)
+
+                        task.wait(DelaySlider.Value)
+
+                        if bedwars.AbilityController:canUseAbility('PALADIN_ABILITY') then
+                            local targetPlayer = getTargetPlayer()
+                            if targetPlayer and targetPlayer.Character then
+                                bedwars.Client:Get(remotes.PaladinAbilityRequest):SendToServer({ target = targetPlayer })
+                                notif("AutoLani", "tp'd to " .. targetPlayer.Name .. " don't die lol", 2)
+                            else
+                                bedwars.Client:Get(remotes.PaladinAbilityRequest):SendToServer({})
+                                notif("AutoLani", "used ability on self fr fr", 2)
+                            end
+                            task.wait(0.022)
+                            bedwars.AbilityController:useAbility('PALADIN_ABILITY')
+                        else
+                            notif("AutoLani", "ability on cooldown rn", 2)
+                        end
+                    end))
+                end)
+
+                if AutoBuyToggle.Enabled then startBuyLoop() end
+
+                AutoLani:Clean(playersService.PlayerAdded:Connect(function()
+                    task.wait(0.5)
+                    if PlayerDropdown and type(PlayerDropdown.SetList) == 'function' then PlayerDropdown:SetList(getTeammates(true)) end
+                end))
+                AutoLani:Clean(playersService.PlayerRemoving:Connect(function()
+                    task.wait(0.5)
+                    if PlayerDropdown and type(PlayerDropdown.SetList) == 'function' then PlayerDropdown:SetList(getTeammates(true)) end
+                end))
+                AutoLani:Clean(lplr:GetAttributeChangedSignal('Team'):Connect(function()
+                    task.wait(1)
+                    if PlayerDropdown and type(PlayerDropdown.SetList) == 'function' then PlayerDropdown:SetList(getTeammates(true)) end
+                end))
+            else
+                running = false
+                stopBuyLoop()
+            end
+        end,
+        Tooltip = "auto tp to teammates w paladin scepter"
+    })
+
+    TargetModeDropdown = AutoLani:CreateDropdown({
+        Name = "Target Mode",
+        List = {"Specific Player", "Lowest Health", "Closest", "Furthest", "Random"},
+        Default = "Specific Player",
+        Function = function(val)
+            if PlayerDropdown then
+                PlayerDropdown.Object.Visible = (val == "Specific Player")
+            end
+        end,
+        Tooltip = "who to tp to"
+    })
+
+    local function teammateListWithNone()
+        local list = {"None"}
+        for _, name in ipairs(getTeammates(true)) do
+            table.insert(list, name)
+        end
+        return list
+    end
+
+    PlayerDropdown = AutoLani:CreateDropdown({
+        Name = "Teammate",
+        List = teammateListWithNone(),
+        Tooltip = "pick ur teammate"
+    })
+
+    RefreshButton = AutoLani:CreateButton({
+        Name = "Refresh Teammates",
+        Function = function()
+            task.spawn(function()
+                local newNames = getTeammates(true)
+                local newList = {"None"}
+                for _, name in ipairs(newNames) do
+                    table.insert(newList, name)
+                end
+                if PlayerDropdown then
+                    pcall(function()
+                        PlayerDropdown:Change(newList)
+                        if #newList > 1 then
+                            if not PlayerDropdown.Value or PlayerDropdown.Value == "" or not table.find(newList, PlayerDropdown.Value) then
+                                PlayerDropdown:SetValue(newList[2] or "None")
+                            else
+                                PlayerDropdown:SetValue(PlayerDropdown.Value)
+                            end
+                        end
+                    end)
+                end
+                notif("AutoLani", #newList > 0 and "refreshed, got " .. #newList .. " teammates" or "no teammates found", 2)
+            end)
+        end,
+        Tooltip = "refresh the teammate list"
+    })
+
+    DelaySlider = AutoLani:CreateSlider({
+        Name = "Teleport Delay",
+        Min = 0,
+        Max = 2,
+        Default = 0.5,
+        Decimal = 10,
+        Suffix = "s",
+        Tooltip = "delay before tping"
+    })
+
+    LimitItems = AutoLani:CreateToggle({
+        Name = "Limit to Scepter",
+        Default = true,
+        Tooltip = "only tp when u holdin the scepter"
+    })
+
+    HealthActivationToggle = AutoLani:CreateToggle({
+        Name = "Health Activation",
+        Default = false,
+        Function = function(val)
+            if HealthThresholdSlider then HealthThresholdSlider.Object.Visible = val end
+            if TeammateHealthToggle then TeammateHealthToggle.Object.Visible = val end
+
+            if not val then
+                if TeammateHealthSlider and TeammateHealthSlider.Object then
+                    TeammateHealthSlider.Object.Visible = false
+                end
+            else
+                if TeammateHealthToggle and TeammateHealthToggle.Enabled then
+                    if TeammateHealthSlider and TeammateHealthSlider.Object then
+                        TeammateHealthSlider.Object.Visible = true
+                    end
+                end
+            end
+        end,
+        Tooltip = "only use ability based on hp"
+    })
+
+    HealthThresholdSlider = AutoLani:CreateSlider({
+        Name = "Self Health %",
+        Min = 1,
+        Max = 100,
+        Default = 50,
+        Suffix = "%",
+        Tooltip = "use ability when ur hp is below this",
+        Visible = false
+    })
+
+    TeammateHealthToggle = AutoLani:CreateToggle({
+        Name = "Teammate Health Check",
+        Default = false,
+        Function = function(val)
+            if TeammateHealthSlider then TeammateHealthSlider.Object.Visible = val end
+        end,
+        Tooltip = "also check teammate hp",
+        Visible = false
+    })
+
+    TeammateHealthSlider = AutoLani:CreateSlider({
+        Name = "Teammate Health %",
+        Min = 1,
+        Max = 100,
+        Default = 30,
+        Suffix = "%",
+        Tooltip = "use ability when teammate hp is below this",
+        Visible = false
+    })
+
+    AutoBuyToggle = AutoLani:CreateToggle({
+        Name = "Auto Buy Scepter",
+        Default = false,
+        Function = function(val)
+            if GUICheck then GUICheck.Object.Visible = val end
+            if DelayBuySlider then DelayBuySlider.Object.Visible = val end
+            if val and AutoLani.Enabled then
+                startBuyLoop()
+            else
+                stopBuyLoop()
+            end
+        end,
+        Tooltip = "auto cop scepters from shop"
+    })
+
+    GUICheck = AutoLani:CreateToggle({
+        Name = "GUI Check",
+        Default = false,
+        Tooltip = "only buy when shop is open",
+        Visible = false
+    })
+
+    DelayBuySlider = AutoLani:CreateSlider({
+        Name = "Buy Delay",
+        Min = 0.1,
+        Max = 2,
+        Default = 0.3,
+        Decimal = 10,
+        Suffix = "s",
+        Tooltip = "delay between buys",
+        Visible = false
+    })
+
+    task.defer(function()
+        if PlayerDropdown and PlayerDropdown.Object then
+            PlayerDropdown.Object.Visible = true
+        end
+        if HealthThresholdSlider and HealthThresholdSlider.Object then
+            HealthThresholdSlider.Object.Visible = false
+        end
+        if TeammateHealthToggle and TeammateHealthToggle.Object then
+            TeammateHealthToggle.Object.Visible = false
+        end
+        if TeammateHealthSlider and TeammateHealthSlider.Object then
+            TeammateHealthSlider.Object.Visible = false
+        end
+        if GUICheck and GUICheck.Object then GUICheck.Object.Visible = false end
+        if DelayBuySlider and DelayBuySlider.Object then DelayBuySlider.Object.Visible = false end
+    end)
+end)
+
+run(function()
+	local KnitInit, Knit
+	repeat
+		KnitInit, Knit = pcall(function()
+			return debug.getupvalue(require(lplr.PlayerScripts.TS.knit).setup, 9)
+		end)
+		if KnitInit then break end
+		task.wait()
+	until KnitInit
+
+	if not debug.getupvalue(Knit.Start, 1) then
+		repeat task.wait() until debug.getupvalue(Knit.Start, 1)
+	end
+
+	local Players = game:GetService("Players")
+
+	shared.PERMISSION_CONTROLLER_HASANYPERMISSIONS_REVERT = shared.PERMISSION_CONTROLLER_HASANYPERMISSIONS_REVERT or Knit.Controllers.PermissionController.hasAnyPermissions
+	shared.MATCH_CONTROLLER_GETPLAYERPARTY_REVERT = shared.MATCH_CONTROLLER_GETPLAYERPARTY_REVERT or Knit.Controllers.MatchController.getPlayerParty
+
+	local AC_MOD_View = {
+		playerConnections = {},
+		Enabled = false,
+		Friends = {}, 
+		parties = {}, 
+		teamMap = {}, 
+		display = {},
+		isRefreshing = false,
+		cacheDirty = true,
+		disable_disguises = false,
+		disguises = {},
+		teamData = {}
+	}
+
+	AC_MOD_View.controller = Knit.Controllers.PermissionController
+	AC_MOD_View.match_controller = Knit.Controllers.MatchController
+
+	function AC_MOD_View:getPartyById(displayId)
+		if not displayId then return end
+		displayId = tostring(displayId)
+		if self.display[displayId] then return self.display[displayId] end
+		for _, party in pairs(self.parties) do
+			if party.displayId == tostring(displayId) then
+				self.display[displayId] = party
+				return party
+			end
+		end
+	end
+
+	function AC_MOD_View:refreshDisplayCache()
+		for _, plr in pairs(Players:GetPlayers()) do
+			local playerId = tostring(plr.UserId)
+
+			local playerPartyId = self.teamMap[playerId]
+			if playerPartyId ~= nil then
+				self:getPartyById(playerPartyId)
+			end
+			task.wait()
+		end
+	end
+
+	function AC_MOD_View:refreshDisplayCacheAsync()
+		task.spawn(self.refreshDisplayCache, self)
+	end
+
+	function AC_MOD_View:getPlayerTeamData(plr)
+		if self.teamData[plr] then return self.teamData[plr] end
+
+		self.teamData[plr] = {}
+
+		local teamMembers = {}
+		local playerTeam = plr.Team 
+		if not playerTeam then
+			return teamMembers 
+		end
+
+		local playerId = tostring(plr.UserId)
+		self.Friends[playerId] = self.Friends[playerId] or {}
+
+		for _, otherPlayer in pairs(Players:GetPlayers()) do
+			if otherPlayer == plr then continue end 
+
+			local otherPlayerId = tostring(otherPlayer.UserId)
+			local areFriends = self.Friends[playerId][otherPlayerId]
+
+			if areFriends == nil then
+				local suc, res = pcall(function()
+					return plr:IsFriendsWith(otherPlayer.UserId)
+				end)
+				areFriends = suc and res or false
+
+				if suc then
+					self.Friends = self.Friends or {}
+					self.Friends[playerId] = self.Friends[playerId] or {}
+					self.Friends[playerId][otherPlayerId] = areFriends
+					self.Friends[otherPlayerId] = self.Friends[otherPlayerId] or {}
+					self.Friends[otherPlayerId][playerId] = areFriends
+				end
+			end
+
+			if areFriends and otherPlayer.Team == playerTeam then
+				table.insert(teamMembers, otherPlayerId)
+			end
+		end
+
+		self.teamData[plr] = teamMembers
+
+		return teamMembers
+	end
+
+	function AC_MOD_View:refreshPlayerTeamData()
+		for i,v in pairs(Players:GetPlayers()) do
+			self:getPlayerTeamData(v)
+			task.wait()
+		end
+	end
+
+	function AC_MOD_View:refreshPlayerTeamDataAsync()
+		task.spawn(self.refreshPlayerTeamData, self)
+	end
+
+	function AC_MOD_View:refreshTeamMap()
+		local allTeams = {}
+		for _, p in pairs(Players:GetPlayers()) do
+			local teamMembers = self:getPlayerTeamData(p)
+			if teamMembers and #teamMembers > 0 then 
+				allTeams[p] = teamMembers
+			end
+		end
+
+		local validTeams = {}
+		for playerInTeams, members in pairs(allTeams) do
+			local playerIdInTeams = tostring(playerInTeams.UserId)
+			local cleanedMembers = {}
+
+			for _, memberId in pairs(members) do
+				local memberIdStr = tostring(memberId)
+				if memberIdStr == playerIdInTeams then
+					--print("Warning: Player " .. playerIdInTeams .. " has themselves in their team list.")
+				else
+					table.insert(cleanedMembers, memberIdStr)
+				end
+			end
+
+			if #cleanedMembers > 0 then
+				validTeams[playerInTeams] = cleanedMembers
+			end
+		end
+
+		self.parties = {}
+		self.teamMap = {}
+		local teamId = 0
+		for playerInTeams, members in pairs(validTeams) do
+			local playerIdInTeams = tostring(playerInTeams.UserId)
+			if not self.teamMap[playerIdInTeams] then
+				self.teamMap[playerIdInTeams] = teamId
+				table.insert(self.parties, {
+					displayId = tostring(teamId),
+					members = members
+				})
+				teamId = teamId + 1
+
+				for _, memberId in pairs(members) do
+					self.teamMap[memberId] = teamId - 1
+				end
+			end
+		end
+
+		self.cacheDirty = false
+		self.isRefreshing = false
+	end
+
+	function AC_MOD_View:refreshTeamMapAsync()
+		if self.isRefreshing then return end 
+		self.isRefreshing = true
+		task.spawn(function()
+			self:refreshTeamMap()
+		end)
+	end
+
+	function AC_MOD_View:getPlayerParty(plr)
+		if not plr or not plr:IsA("Player") then
+			return nil
+		end
+
+		local playerId = tostring(plr.UserId)
+
+		if self.cacheDirty or not next(self.teamMap) then
+			self:refreshTeamMapAsync()
+		end
+
+		local playerPartyId = self.teamMap[playerId]
+		if playerPartyId ~= nil then
+			return self:getPartyById(playerPartyId)
+		end
+
+		return nil 
+	end
+
+	AC_MOD_View.mockGetPlayerParty = function(self, plr)
+		local parties = self.parties 
+		if parties ~= nil and #parties > 0 then
+			return shared.MATCH_CONTROLLER_GETPLAYERPARTY_REVERT(self, plr)
+		end
+		return AC_MOD_View:getPlayerParty(plr)
+	end
+
+	function AC_MOD_View:toggleDisableDisguises()
+		if not self.Enabled then return end
+		if self.disable_disguises then
+			for _,v in pairs(Players:GetPlayers()) do
+				if v == Players.LocalPlayer then continue end
+				local disguiseName = v:GetAttribute("DisguiseDisplayName")
+				if disguiseName and disguiseName ~= "" then
+					self.disguises[v] = disguiseName
+					v:SetAttribute("DisguiseDisplayName", "")
+					notif("Remove Disguises", "Disabled streamer mode for "..tostring(v.Name).."!", 3)
+				end
+			end
+			pcall(function() Knit.Controllers.StreamerModeController:updateNametags(true) end)
+		else
+			for v, originalName in pairs(self.disguises) do
+				if v and v.Parent then
+					v:SetAttribute("DisguiseDisplayName", originalName)
+					notif("Remove Disguises", "Re-enabled Streamer mode for "..tostring(v.Name).."!", 2)
+				end
+			end
+			table.clear(self.disguises)
+			pcall(function() Knit.Controllers.StreamerModeController:updateNametags(true) end)
+		end
+	end
+
+	function AC_MOD_View:refreshCore()
+		self:refreshTeamMapAsync()
+		self:refreshDisplayCacheAsync()
+		self:refreshPlayerTeamDataAsync()
+
+		self:toggleDisableDisguises()
+	end
+
+	function AC_MOD_View:refreshCoreAsync()
+		task.spawn(self.refreshCore, self)
+	end
+
+	function AC_MOD_View:init()
+		self.Enabled = true
+		self.controller.hasAnyPermissions = function(self)
+			return true
+		end
+		self.match_controller.getPlayerParty = self.mockGetPlayerParty
+
+		self.playerConnections = {
+			added = Players.PlayerAdded:Connect(function(player)
+				self.cacheDirty = true
+				self:refreshCoreAsync()
+				player:GetPropertyChangedSignal("Team"):Connect(function()
+					self.cacheDirty = true
+					self:refreshCoreAsync()
+				end)
+			end),
+			removed = Players.PlayerRemoving:Connect(function(player)
+				local playerId = tostring(player.UserId)
+				self.Friends[playerId] = nil 
+				for _, cache in pairs(self.Friends) do
+					cache[playerId] = nil
+				end
+				self.cacheDirty = true
+				self:refreshCoreAsync()
+			end)
+		}
+
+		self:refreshCore()
+	end
+
+	function AC_MOD_View:disable()
+		self.Enabled = false
+
+		self.controller.hasAnyPermissions = shared.PERMISSION_CONTROLLER_HASANYPERMISSIONS_REVERT
+		self.match_controller.getPlayerParty = shared.MATCH_CONTROLLER_GETPLAYERPARTY_REVERT
+
+		if self.playerConnections then
+			for _, v in pairs(self.playerConnections) do
+				pcall(function() v:Disconnect() end)
+			end
+			table.clear(self.playerConnections)
+		end
+
+		self.parties = {}
+		self.teamMap = {}
+		self.Friends = {}
+		self.display = {}
+		self.teamData = {}
+		self.cacheDirty = true
+
+		self:toggleDisableDisguises()
+	end
+
+	shared.ACMODVIEWENABLED = false
+	AC_MOD_View.moduleInstance = vape.Categories.World:CreateModule({
+		Name = "ACMODView",
+		Function = function(call)
+			shared.ACMODVIEWENABLED = call
+			if call then
+				AC_MOD_View:init()
+			else
+				AC_MOD_View:disable()
+			end
+		end
+	})
+
+	AC_MOD_View.disableDisguisesToggle = AC_MOD_View.moduleInstance:CreateToggle({
+		Name = "Remove Disguises",
+		Function = function(call)
+			AC_MOD_View.disable_disguises = call
+			AC_MOD_View:toggleDisableDisguises()
+		end,
+		Default = true
+	})
+end)
+
+run(function()
+	local InfiniteBeast = vape.Categories.Utility:CreateModule({
+		Name = 'InfiniteBeast',
+		Function = function(callback)
+			if callback then
+				task.spawn(function()
+					while InfiniteBeast.Enabled do
+						task.wait(0.1)
+						pcall(function()
+							lplr:SetAttribute('BeastBloodlust', 300)
+						end)
+					end
+				end)
+			end
+		end,
+		Tooltip = 'keeps beast bloodlust maxed so u can stay in beast form forever'
+	})
+end)
+
+run(function()
 	local privateFunc = loadstring(readfile('newvape/games/private.lua'))()
 	if privateFunc then
 		privateFunc(vape, run, bedwars, entitylib, lplr, inputService, runService, store, playersService, replicatedStorage, tweenService, httpService, textChatService, collectionService, contextActionService, guiService, coreGui, starterGui, lightingService, gameCamera, entitylib, targetinfo, sessioninfo, uipallet, tween, color, prediction, getfontsize, getcustomasset, vapeEvents, isnetworkowner, assetfunction, VirtualInputManager)
 	end
 end)
-
