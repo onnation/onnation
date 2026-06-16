@@ -5487,6 +5487,17 @@ function mainapi:CreateCategory(categorysettings)
 	arrowbutton.MouseLeave:Connect(function()
 		arrow.ImageColor3 = Color3.fromRGB(140, 140, 140)
 	end)
+	arrowbutton.MouseButton1Click:Connect(function()
+		categoryapi.Expanded = not categoryapi.Expanded
+		children.Visible = categoryapi.Expanded
+		tween:Tween(arrow, uipallet.Tween, {
+			Rotation = categoryapi.Expanded and 0 or 180
+		})
+		local targetSize = categoryapi.Expanded and UDim2.fromOffset(220, math.min(41 + windowlist.AbsoluteContentSize.Y / scale.Scale, 601)) or UDim2.fromOffset(220, 41)
+		tween:Tween(window, uipallet.Tween, {
+			Size = targetSize
+		})
+	end)
 	children:GetPropertyChangedSignal('CanvasPosition'):Connect(function()
 		if self.ThreadFix then
 			setthreadidentity(8)
@@ -7117,7 +7128,7 @@ function mainapi:Load(skipgui, profile)
 
 		if v.Pinned and not object.Pinned then
 			pcall(function()
-				local pinButton = object.Object:FindFirstChild('Pin')
+				local pinButton = object.Object:FindFirstChild('Favorite')
 				if pinButton then
 					for _, conn in getconnections(pinButton.MouseButton1Click) do
 						conn:Fire()
@@ -7550,11 +7561,6 @@ mainapi:CreateCategory({
 mainapi:CreateCategory({
 	Name = 'Kits',
 	Icon = getcustomasset('newvape/assets/new/vape.png'),
-	Size = UDim2.fromOffset(20, 18)
-})
-mainapi:CreateCategory({
-	Name = 'BoostFPS',
-	Icon = getcustomasset('newvape/assets/new/edit.png'),
 	Size = UDim2.fromOffset(20, 18)
 })
 mainapi.Categories.Main:CreateDivider('misc')
@@ -8554,7 +8560,7 @@ guipane:CreateToggle({
         shared.VapeIndependent = not callback
     end,
     Default = true, 
-    Tooltip = 'Automatically re‑inject after teleporting to another server.'
+    Tooltip = 'keeps u injected when u teleport c:'
 })
 
 local notifColorToggle = guipane:CreateToggle({
