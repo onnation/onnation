@@ -9014,7 +9014,6 @@ end)
 
 run(function()
 	local AutoTool
-	local SwitchDelay
 
 	AutoTool = vape.Categories.World:CreateModule({
 		Name = 'AutoTool',
@@ -9042,34 +9041,14 @@ run(function()
 					end
 					if slot == nil then return end
 
-					local delay = SwitchDelay and SwitchDelay.Value or 0.05
-
-					if delay <= 0 then
-						hotbarSwitch(slot)
-						return
-					else
-						hotbarSwitch(slot)
-						task.spawn(function()
-							task.wait(delay)
-							leftClick()
-						end)
-						return true 
-					end
+					hotbarSwitch(slot)
+					return
 				end)
 			else
 				unregisterHitBlockPatch('AutoTool')
 			end
 		end,
 		Tooltip = 'switches to the correct tool for the block ur lookin at'
-	})
-
-	SwitchDelay = AutoTool:CreateSlider({
-		Name = 'Switch Delay',
-		Min = 0,
-		Max = 2.0,
-		Default = 0.05,
-		Decimal = 100,
-		Suffix = 's',
 	})
 end)
 	
