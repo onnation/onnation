@@ -9,6 +9,7 @@ local mainapi = {
 	Keybind = {'RightShift'},
 	Loaded = false,
 	Libraries = {},
+	ModuleProfiles = {},
 	Modules = {},
     Place = game.PlaceId == 6872265039 and game.PlaceId or game.GameId,
 	Profile = 'default',
@@ -5402,6 +5403,218 @@ function mainapi:CreateCategory(categorysettings)
 			modulechildren.Size = UDim2.new(1, 0, 0, windowlist.AbsoluteContentSize.Y / scale.Scale)
 		end)
 
+		local modProfileDivider = Instance.new('Frame')
+		modProfileDivider.Name = 'ProfilesDivider'
+		modProfileDivider.Size = UDim2.new(1, 0, 0, 1)
+		modProfileDivider.BackgroundColor3 = color.Light(uipallet.Main, 0.08)
+		modProfileDivider.BorderSizePixel = 0
+		modProfileDivider.LayoutOrder = 9990
+		modProfileDivider.Parent = modulechildren
+
+		local modProfileHeader = Instance.new('TextLabel')
+		modProfileHeader.Name = 'ProfilesHeader'
+		modProfileHeader.Size = UDim2.new(0, 200, 0, 34)   
+		modProfileHeader.Position = UDim2.fromOffset(12, 0) 
+		modProfileHeader.BackgroundTransparency = 1
+		modProfileHeader.Text = 'Module Profiles'
+		modProfileHeader.TextColor3 = color.Dark(uipallet.Text, 0.25)
+		modProfileHeader.TextSize = 10
+		modProfileHeader.TextXAlignment = Enum.TextXAlignment.Left
+		modProfileHeader.FontFace = uipallet.FontSemiBold
+		modProfileHeader.LayoutOrder = 9991
+		modProfileHeader.Parent = modulechildren
+
+		local modProfileAddBkg = Instance.new('Frame')
+		modProfileAddBkg.Name = 'ProfileAdd'
+		modProfileAddBkg.Size = UDim2.new(1, -20, 0, 32)
+		modProfileAddBkg.BackgroundColor3 = color.Light(uipallet.Main, 0.04)
+		modProfileAddBkg.BorderSizePixel = 0
+		modProfileAddBkg.LayoutOrder = 9992
+		modProfileAddBkg.Parent = modulechildren
+		addCorner(modProfileAddBkg, UDim.new(0, 6))
+		local addStroke = Instance.new('UIStroke')
+		addStroke.Color = color.Light(uipallet.Main, 0.06)
+		addStroke.Thickness = 1
+		addStroke.Parent = modProfileAddBkg
+
+		local modProfileAddBox = Instance.new('TextBox')
+		modProfileAddBox.Size = UDim2.new(1, -36, 1, 0)
+		modProfileAddBox.Position = UDim2.fromOffset(10, 0)
+		modProfileAddBox.BackgroundTransparency = 1
+		modProfileAddBox.Text = ''
+		modProfileAddBox.PlaceholderText = 'New profile name...'
+		modProfileAddBox.PlaceholderColor3 = color.Dark(uipallet.Text, 0.3)
+		modProfileAddBox.TextXAlignment = Enum.TextXAlignment.Left
+		modProfileAddBox.TextColor3 = uipallet.Text
+		modProfileAddBox.TextSize = 12
+		modProfileAddBox.FontFace = uipallet.Font
+		modProfileAddBox.ClearTextOnFocus = false
+		modProfileAddBox.Parent = modProfileAddBkg
+
+		local modProfileAddBtn = Instance.new('ImageButton')
+		modProfileAddBtn.Name = 'AddButton'
+		modProfileAddBtn.Size = UDim2.fromOffset(18, 18)
+		modProfileAddBtn.Position = UDim2.new(1, -24, 0.5, -9)
+		modProfileAddBtn.BackgroundTransparency = 1
+		modProfileAddBtn.Image = getcustomasset('newvape/assets/new/add.png')
+		modProfileAddBtn.ImageColor3 = color.Light(uipallet.Main, 0.4)
+		modProfileAddBtn.ImageTransparency = 0.3
+		modProfileAddBtn.Parent = modProfileAddBkg
+
+		modProfileAddBtn.MouseEnter:Connect(function()
+			modProfileAddBtn.ImageTransparency = 0
+		end)
+		modProfileAddBtn.MouseLeave:Connect(function()
+			modProfileAddBtn.ImageTransparency = 0.3
+		end)
+
+		local modProfileList = Instance.new('Frame')
+		modProfileList.Name = 'ProfileList'
+		modProfileList.Size = UDim2.new(1, 0, 0, 0)
+		modProfileList.BackgroundTransparency = 1
+		modProfileList.BorderSizePixel = 0
+		modProfileList.LayoutOrder = 9993
+		modProfileList.Parent = modulechildren
+		local modProfileListLayout = Instance.new('UIListLayout')
+		modProfileListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		modProfileListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		modProfileListLayout.Padding = UDim.new(0, 3)
+		modProfileListLayout.Parent = modProfileList
+
+		modProfileListLayout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(function()
+			if mainapi.ThreadFix then setthreadidentity(8) end
+			modProfileList.Size = UDim2.new(1, 0, 0, modProfileListLayout.AbsoluteContentSize.Y / scale.Scale + 6)
+		end)
+
+		local modCurrentProfile = 'default'
+
+		local function modProfileRefresh()
+			for _, v in modProfileList:GetChildren() do
+				if v:IsA('TextButton') then v:Destroy() end
+			end
+			if not mainapi.ModuleProfiles[modulesettings.Name] then
+				mainapi.ModuleProfiles[modulesettings.Name] = {'default'}
+			end
+			for _, profileName in mainapi.ModuleProfiles[modulesettings.Name] do
+				local entry = Instance.new('TextButton')
+				entry.Name = profileName
+				entry.Size = UDim2.new(1, -20, 0, 34)
+				entry.BackgroundColor3 = profileName == modCurrentProfile and color.Light(uipallet.Main, 0.06) or color.Light(uipallet.Main, 0.02)
+				entry.AutoButtonColor = false
+				entry.Text = ''
+				entry.Parent = modProfileList
+				addCorner(entry, UDim.new(0, 6))
+				addTooltip(entry, 'click to load this profile (saves current first)')
+
+				local entryIcon = Instance.new('ImageLabel')
+				entryIcon.Size = UDim2.fromOffset(12, 12)
+				entryIcon.Position = UDim2.fromOffset(10, 11)
+				entryIcon.BackgroundTransparency = 1
+				entryIcon.Image = getcustomasset('newvape/assets/new/profilesicon.png')
+				entryIcon.ImageColor3 = profileName == modCurrentProfile and uipallet.Text or color.Dark(uipallet.Text, 0.3)
+				entryIcon.Parent = entry
+
+				local entryTitle = Instance.new('TextLabel')
+				entryTitle.Size = UDim2.new(1, -45, 1, 0)
+				entryTitle.Position = UDim2.fromOffset(28, 0)
+				entryTitle.BackgroundTransparency = 1
+				entryTitle.Text = profileName
+				entryTitle.TextXAlignment = Enum.TextXAlignment.Left
+				entryTitle.TextColor3 = profileName == modCurrentProfile and uipallet.Text or color.Dark(uipallet.Text, 0.4)
+				entryTitle.TextSize = 13
+				entryTitle.FontFace = uipallet.Font
+				entryTitle.Parent = entry
+
+				local entryClose = Instance.new('ImageButton')
+				entryClose.Size = UDim2.fromOffset(16, 16)
+				entryClose.Position = UDim2.new(1, -22, 0.5, -8)
+				entryClose.BackgroundTransparency = 1
+				entryClose.AutoButtonColor = false
+				entryClose.Image = getcustomasset('newvape/assets/new/closemini.png')
+				entryClose.ImageColor3 = color.Dark(uipallet.Text, 0.3)
+				entryClose.ImageTransparency = 0.5
+				entryClose.Visible = profileName ~= 'default'
+				entryClose.Parent = entry
+				addCorner(entryClose, UDim.new(1, 0))
+				addTooltip(entryClose, 'delete this profile')
+
+				entryClose.MouseEnter:Connect(function()
+					entryClose.ImageTransparency = 0.2
+					entryClose.ImageColor3 = Color3.fromRGB(255, 80, 80)
+				end)
+				entryClose.MouseLeave:Connect(function()
+					entryClose.ImageTransparency = 0.5
+					entryClose.ImageColor3 = color.Dark(uipallet.Text, 0.3)
+				end)
+				entryClose.MouseButton1Click:Connect(function()
+					local ind = table.find(mainapi.ModuleProfiles[modulesettings.Name], profileName)
+					if ind then
+						table.remove(mainapi.ModuleProfiles[modulesettings.Name], ind)
+						local modFile = 'newvape/profiles/mod_'..modulesettings.Name..'_'..profileName..mainapi.Place..'.txt'
+						if isfile(modFile) and delfile then
+							delfile(modFile)
+						end
+						if modCurrentProfile == profileName then
+							modCurrentProfile = 'default'
+						end
+						modProfileRefresh()
+					end
+				end)
+
+				entry.MouseEnter:Connect(function()
+					if profileName ~= modCurrentProfile then
+						entry.BackgroundColor3 = color.Light(uipallet.Main, 0.04)
+						entryTitle.TextColor3 = color.Dark(uipallet.Text, 0.16)
+						entryIcon.ImageColor3 = uipallet.Text
+					end
+				end)
+				entry.MouseLeave:Connect(function()
+					if profileName ~= modCurrentProfile then
+						entry.BackgroundColor3 = color.Light(uipallet.Main, 0.02)
+						entryTitle.TextColor3 = color.Dark(uipallet.Text, 0.4)
+						entryIcon.ImageColor3 = color.Dark(uipallet.Text, 0.3)
+					end
+				end)
+				entry.MouseButton1Click:Connect(function()
+					mainapi:SaveModuleProfile(moduleapi, modCurrentProfile)
+					modCurrentProfile = profileName
+					mainapi:LoadModuleProfile(moduleapi, profileName)
+					modProfileRefresh()
+				end)
+			end
+		end
+
+		local function modProfileAdd(name)
+			name = name:gsub('^%s+', ''):gsub('%s+$', '')
+			if name == '' then return end
+			if not mainapi.ModuleProfiles[modulesettings.Name] then
+				mainapi.ModuleProfiles[modulesettings.Name] = {'default'}
+			end
+			if not table.find(mainapi.ModuleProfiles[modulesettings.Name], name) then
+				table.insert(mainapi.ModuleProfiles[modulesettings.Name], name)
+				mainapi:SaveModuleProfile(moduleapi, modCurrentProfile)
+				modCurrentProfile = name
+				mainapi:SaveModuleProfile(moduleapi, name)
+				modProfileRefresh()
+				modProfileAddBox.Text = ''
+			end
+		end
+
+		modProfileAddBtn.MouseButton1Click:Connect(function()
+			modProfileAdd(modProfileAddBox.Text)
+		end)
+		modProfileAddBox.FocusLost:Connect(function(enter)
+			if enter then
+				modProfileAdd(modProfileAddBox.Text)
+			end
+		end)
+
+		modulechildren:GetPropertyChangedSignal('Visible'):Connect(function()
+			if modulechildren.Visible then
+				modProfileRefresh()
+			end
+		end)
+
 		moduleapi.Object = modulebutton
 		mainapi.Modules[modulesettings.Name] = moduleapi
 
@@ -7039,6 +7252,7 @@ function mainapi:Load(skipgui, profile)
 
 	self.Profile = profile or guidata.Profile or 'default'
 	self.Profiles = guidata.Profiles or {{Name = 'default', Bind = {}}}
+	self.ModuleProfiles = guidata.ModuleProfiles or {}
 
 	if not inputService.TouchEnabled then
 		for _, p in ipairs(self.Profiles) do
@@ -7268,6 +7482,7 @@ function mainapi:Save(newprofile)
 			BgColor = mobileButtonBgColor and {R = mobileButtonBgColor.R, G = mobileButtonBgColor.G, B = mobileButtonBgColor.B} or nil,
 			ActiveColor = mobileButtonActiveColor and {R = mobileButtonActiveColor.R, G = mobileButtonActiveColor.G, B = mobileButtonActiveColor.B} or nil,
 		},
+		ModuleProfiles = self.ModuleProfiles,
 		NotifBgColor = self.NotificationColor and {Hue = self.NotificationColor.Hue, Sat = self.NotificationColor.Sat, Value = self.NotificationColor.Value} or nil,
 		NotifBarColor = self.NotificationBarColor and {Hue = self.NotificationBarColor.Hue, Sat = self.NotificationBarColor.Sat, Value = self.NotificationBarColor.Value} or nil,
 		NotifBgEnabled = notifColorToggle and notifColorToggle.Enabled or false,
@@ -7343,6 +7558,20 @@ function mainapi:SaveOptions(object, savedoptions)
         end)
     end
     return savedoptions
+end
+
+function mainapi:SaveModuleProfile(moduleapi, profileName)
+	local saved = self:SaveOptions(moduleapi, true) or {}
+	writefile('newvape/profiles/mod_'..moduleapi.Name..'_'..profileName..self.Place..'.txt', httpService:JSONEncode(saved))
+end
+
+function mainapi:LoadModuleProfile(moduleapi, profileName)
+	local file = 'newvape/profiles/mod_'..moduleapi.Name..'_'..profileName..self.Place..'.txt'
+	if not isfile(file) then return end
+	local success, result = pcall(loadJson, file)
+	if success and result then
+		self:LoadOptions(moduleapi, result)
+	end
 end
 
 function mainapi:Uninject()
