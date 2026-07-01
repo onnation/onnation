@@ -1062,30 +1062,46 @@ run(function()
 	local Targets
 	local ShootDelay
 	local Distance
-	local rayCheck, delayCheck = RaycastParams.new(), tick()
-	
+	local delayCheck = tick()
+	local mouseClicked = false
+	local inputService = game:GetService("UserInputService")
+
 	local function getTriggerBotTarget()
-		rayCheck.FilterDescendantsInstances = {lplr.Character, gameCamera}
-	
-		local ray = workspace:Raycast(gameCamera.CFrame.Position, gameCamera.CFrame.LookVector * Distance.Value, rayCheck)
-		if ray and ray.Instance then
-			for _, v in entitylib.List do
-				if v.Targetable and v.Character and (Targets.Players.Enabled and v.Player or Targets.NPCs.Enabled and v.NPC) then
-					if ray.Instance:IsDescendantOf(v.Character) then
-						return entitylib.isVulnerable(v) and v
+		local char = lplr.Character
+		if not char then return nil end
+
+		-- Get mouse position on screen
+		local mousePos = inputService:GetMouseLocation()
+		local ray = gameCamera:ViewportPointToRay(mousePos.X, mousePos.Y)
+
+		local rayParams = RaycastParams.new()
+		rayParams.FilterDescendantsInstances = {char, gameCamera}
+		rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * Distance.Value, rayParams)
+		if hit and hit.Instance then
+			for _, v in ipairs(entitylib.List) do
+				if v.Targetable and v.Character then
+					local isTarget = (Targets.Players.Enabled and v.Player) or (Targets.NPCs.Enabled and v.NPC)
+					if isTarget and entitylib.isVulnerable(v) then
+						if hit.Instance:IsDescendantOf(v.Character) then
+							return v
+						end
 					end
 				end
 			end
 		end
+		return nil
 	end
-	
+
 	TriggerBot = vape.Categories.Combat:CreateModule({
 		Name = 'TriggerBot',
 		Function = function(callback)
 			if callback then
 				repeat
 					if mouse1click and (isrbxactive or iswindowactive)() then
-						if getTriggerBotTarget() and canClick() then
+						local target = getTriggerBotTarget()
+						if target and canClick() then
 							if delayCheck < tick() then
 								if mouseClicked then
 									mouse1release()
@@ -1115,6 +1131,7 @@ run(function()
 		end,
 		Tooltip = 'Shoots people that enter your crosshair'
 	})
+
 	Targets = TriggerBot:CreateTargets({
 		Players = true,
 		NPCs = true
@@ -1730,97 +1747,84 @@ run(function()
 end)
 
 run(function()
-	local AnimationPlayer
-	local IDBox
-	local Priority
-	local Speed
-	local anim, animobject
-	
-	local function playAnimation(char)
-		local animcheck = anim
-		if animcheck then
-			anim = nil
-			animcheck:Stop()
-		end
-	
-		local suc, res = pcall(function()
-			anim = char.Humanoid.Animator:LoadAnimation(animobject)
-		end)
-	
-		if suc then
-			local currentanim = anim
-			anim.Priority = Enum.AnimationPriority[Priority.Value]
-			anim:Play()
-			anim:AdjustSpeed(Speed.Value)
-			AnimationPlayer:Clean(anim.Stopped:Connect(function()
-				if currentanim == anim then
-					anim:Play()
-				end
-			end))
-		else
-			notif('AnimationPlayer', 'failed to load anim : '..(res or 'invalid animation id'), 5, 'warning')
-		end
-	end
-	
-	AnimationPlayer = vape.Categories.Utility:CreateModule({
-		Name = 'Animation Player',
-		Function = function(callback)
-			if callback then
-				animobject = Instance.new('Animation')
-				local suc, id = pcall(function()
-					return string.match(game:GetObjects('rbxassetid://'..IDBox.Value)[1].AnimationId, '%?id=(%d+)')
-				end)
-				animobject.AnimationId = 'rbxassetid://'..(suc and id or IDBox.Value)
-	
-				if entitylib.isAlive then
-					playAnimation(entitylib.character)
-				end
-				AnimationPlayer:Clean(entitylib.Events.LocalAdded:Connect(playAnimation))
-				AnimationPlayer:Clean(animobject)
-			else
-				if anim then
-					anim:Stop()
-				end
-			end
-		end,
-		Tooltip = 'Plays a specific animation of your choosing at a certain speed'
-	})
-	IDBox = AnimationPlayer:CreateTextBox({
-		Name = 'Animation',
-		Placeholder = 'anim (num only)',
-		Function = function(enter)
-			if enter and AnimationPlayer.Enabled then
-				AnimationPlayer:Toggle()
-				AnimationPlayer:Toggle()
-			end
-		end
-	})
-	local prio = {'Action4'}
-	for _, v in Enum.AnimationPriority:GetEnumItems() do
-		if v.Name ~= 'Action4' then
-			table.insert(prio, v.Name)
-		end
-	end
-	Priority = AnimationPlayer:CreateDropdown({
-		Name = 'Priority',
-		List = prio,
-		Function = function(val)
-			if anim then
-				anim.Priority = Enum.AnimationPriority[val]
-			end
-		end
-	})
-	Speed = AnimationPlayer:CreateSlider({
-		Name = 'Speed',
-		Function = function(val)
-			if anim then
-				anim:AdjustSpeed(val)
-			end
-		end,
-		Min = 0.1,
-		Max = 2,
-		Decimal = 10
-	})
+    local AnimationPlayer
+    local vexroCleanup = nil
+    local isLoaded = false
+    local player = game:GetService("Players").LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui", 10)
+
+    local function loadVexro()
+        if isLoaded then return true end
+        local url = "https://raw.githubusercontent.com/zyrovell/Vexro/main/src/vexroemotes.lua"
+        local success, result = pcall(function()
+            return game:HttpGet(url)
+        end)
+        if not success then
+            notif("Animation Player", "Failed to fetch Vexro Emotes: " .. tostring(result), 5, "warning")
+            return false
+        end
+        _G.selectedLang = "EN"
+        _G.Settings = _G.Settings or {}
+        _G.Settings.language = "EN"
+        local func, err = loadstring(result)
+        local ok, loadErr = pcall(func)
+        if not ok then
+            notif("Animation Player", "failed to run: " .. tostring(loadErr), 5, "warning")
+            return false
+        end
+        isLoaded = true
+        if _G.VexroEmotesCleanup then
+            vexroCleanup = _G.VexroEmotesCleanup
+        end
+        return true
+    end
+
+    local function unloadVexro()
+        if vexroCleanup then
+            pcall(vexroCleanup)
+            vexroCleanup = nil
+        end
+        local gui = playerGui:FindFirstChild("VexroEmotes")
+        if gui then gui:Destroy() end
+        isLoaded = false
+        _G.VexroEmotesCleanup = nil
+        _G.lastVexroEmote = nil
+        _G.autoReloadEnabled_Vexro = nil
+    end
+
+    AnimationPlayer = vape.Categories.Utility:CreateModule({
+        Name = "Animation Player",
+        Tooltip = "loads the Vexro Emotes GUI with animations gng",
+        Function = function(callback)
+            if callback then
+                local loaded = loadVexro()
+                if not loaded then
+                    AnimationPlayer:Toggle()
+                    return
+                end
+                local gui = playerGui:FindFirstChild("VexroEmotes")
+                if gui then gui.Enabled = true end
+                AnimationPlayer:Clean(function()
+                    unloadVexro()
+                end)
+            else
+                unloadVexro()
+            end
+        end
+    })
+
+    AnimationPlayer:CreateButton({
+        Name = "Reload Vexro",
+        Function = function()
+            if AnimationPlayer.Enabled then
+                unloadVexro()
+                task.wait(0.2)
+                loadVexro()
+                local gui = playerGui:FindFirstChild("VexroEmotes")
+                if gui then gui.Enabled = true end
+            end
+        end
+    })
 end)
 	
 run(function()
@@ -8361,5 +8365,191 @@ run(function()
         Placeholder = '{"FFlagDebugDisplayFPS": "True"}',
         Function = ChangeFFlag,
         Tooltip = 'json format only gng – flags get applied when u enable the module'
+    })
+end)
+
+run(function()
+	local Headless
+	local headlessLoop = nil
+
+	local headAttachments = {HatAttachment=true,HairAttachment=true,FaceFrontAttachment=true,FaceCenterAttachment=true,FaceBackAttachment=true}
+	local removeAccs = false
+
+	local function applyHeadless(char)
+		if not char then return end
+		local head = char:FindFirstChild("Head")
+		if not head then return end
+		head.Transparency = 1
+		local face = head:FindFirstChild('face')
+		if face and face:IsA("Decal") then
+			face.Transparency = 1
+		end
+		if removeAccs then
+			for _, acc in ipairs(char:GetChildren()) do
+				if acc:IsA("Accessory") then
+					local handle = acc:FindFirstChild("Handle")
+					if handle then
+						for _, att in ipairs(handle:GetChildren()) do
+							if att:IsA("Attachment") and headAttachments[att.Name] then
+								handle.Transparency = 1
+								for _, d in ipairs(handle:GetChildren()) do
+									if d:IsA("Decal") or d:IsA("Texture") then d.Transparency = 1 end
+								end
+								break
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	Headless = vape.Categories.Utility:CreateModule({
+		PerformanceModeBlacklisted = true,
+		Name = 'Headless',
+		Tooltip = 'free headless 2026!!',
+		Function = function(callback)
+			if callback then
+				if headlessLoop then task.cancel(headlessLoop) end
+				headlessLoop = task.spawn(function()
+					while Headless.Enabled do
+						applyHeadless(lplr.Character)
+						task.wait(0.1)
+					end
+				end)
+				Headless:Clean(lplr.CharacterAdded:Connect(function(char)
+					applyHeadless(char)
+				end))
+			else
+				if headlessLoop then
+					task.cancel(headlessLoop)
+					headlessLoop = nil
+				end
+				local char = lplr.Character
+				if char then
+					local head = char:FindFirstChild("Head")
+					if head then
+						head.Transparency = 0
+						local face = head:FindFirstChild('face')
+						if face and face:IsA("Decal") then
+							face.Transparency = 0
+						end
+					end
+					for _, acc in ipairs(char:GetChildren()) do
+						if acc:IsA("Accessory") then
+							local handle = acc:FindFirstChild("Handle")
+							if handle then
+								handle.Transparency = 0
+								for _, d in ipairs(handle:GetChildren()) do
+									if d:IsA("Decal") or d:IsA("Texture") then d.Transparency = 0 end
+								end
+							end
+						end
+					end
+				end
+			end
+		end,
+		Default = false
+	})
+
+	Headless:CreateToggle({
+		Name = "Remove Accessories",
+		Default = false,
+		Function = function(state)
+			removeAccs = state
+			if Headless.Enabled then
+				applyHeadless(lplr.Character)
+			end
+		end
+	})
+end)
+
+run(function()
+    local ProximityMaxDistance
+    local MaxDistance
+    local oldDistances = {}
+    local addedConnection
+    local removedConnection
+    local trackedPrompts = {}
+    
+    ProximityMaxDistance = vape.Categories.Utility:CreateModule({
+        Name = "ProximityExtender",
+        Function = function(callback)
+            
+            if callback then
+                table.clear(oldDistances)
+                table.clear(trackedPrompts)
+                
+                local function applyToPrompt(prompt)
+                    if not prompt:IsA("ProximityPrompt") then return end
+                    if trackedPrompts[prompt] then return end 
+                    
+                    trackedPrompts[prompt] = true
+                    oldDistances[prompt] = prompt.MaxActivationDistance
+                    prompt.MaxActivationDistance = MaxDistance.Value
+                end
+                
+                local function scanForPrompts(parent)
+                    for _, obj in ipairs(parent:GetDescendants()) do
+                        if obj:IsA("ProximityPrompt") then
+                            applyToPrompt(obj)
+                        end
+                    end
+                end
+                
+                scanForPrompts(workspace)
+                
+                addedConnection = workspace.DescendantAdded:Connect(function(obj)
+                    if obj:IsA("ProximityPrompt") then
+                        applyToPrompt(obj)
+                    end
+                end)
+                
+                removedConnection = workspace.DescendantRemoving:Connect(function(obj)
+                    if obj:IsA("ProximityPrompt") then
+                        oldDistances[obj] = nil
+                        trackedPrompts[obj] = nil
+                    end
+                end)
+                
+                MaxDistance.Function = function(value)
+                    for prompt in pairs(trackedPrompts) do
+                        if prompt and prompt.Parent then
+                            prompt.MaxActivationDistance = value
+                        end
+                    end
+                end
+            else
+                if addedConnection then
+                    addedConnection:Disconnect()
+                    addedConnection = nil
+                end
+                
+                if removedConnection then
+                    removedConnection:Disconnect()
+                    removedConnection = nil
+                end
+                
+                for prompt, dist in pairs(oldDistances) do
+                    if prompt and prompt.Parent then
+                        pcall(function()
+                            prompt.MaxActivationDistance = dist
+                        end)
+                    end
+                end
+                
+                table.clear(oldDistances)
+                table.clear(trackedPrompts)
+                MaxDistance.Function = function() end
+            end
+        end,
+        Tooltip = "increase the range of proximity"
+    })
+    
+    MaxDistance = ProximityMaxDistance:CreateSlider({
+        Name = 'Max Distance',
+        Min = 10,
+        Max = 20,
+        Default = 20,
     })
 end)
