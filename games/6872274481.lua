@@ -100,7 +100,6 @@ local getcustomasset = vape.Libraries.getcustomasset
 local store = {
     attackReach = 0,
     attackReachUpdate = tick(),
-    damageBlockFail = tick(),
     hand = {},
     inventory = {
         inventory = {
@@ -412,6 +411,16 @@ local function hotbarSwitch(slot)
 	end
 	return false
 end
+
+local function getHotbar(tool)
+	for i, v in (store.inventory.hotbar or {}) do
+		if v.item and v.item.tool == tool then
+			return i - 1
+		end
+	end
+	return nil
+end
+getgenv().getHotbar = getHotbar
 
 local function isFriend(plr, recolor)
 	if vape.Categories.Friends.Options['Use friends'].Enabled then
@@ -1334,6 +1343,7 @@ run(function()
 		if lplr:GetAttribute('DenyBlockBreak') or not entitylib.isAlive then return end
 		local handler = bedwars.BlockController:getHandlerRegistry():getHandler(block.Name)
 		local cost, pos, target, path = math.huge, nil, nil, nil
+		local playerPos = entitylib.character.RootPart.Position
 
 		for _, v in (handler and handler:getContainedPositions(block) or {block.Position / 3}) do
 			local dpos, dcost, dpath = calculatePath(block, v * 3, sort, angle or 360)
@@ -1351,10 +1361,17 @@ run(function()
 				local breaktype = dblock.Name == 'gumdrop_bounce_pad' and 'stone' or bedwars.ItemMeta[dblock.Name].block.breakType
 				local tool = store.tools[breaktype]
 				if tool then
-					if visualise and getHotbar then
-						local hotbar = getHotbar(tool.tool)
-						if hotbar then
-							hotbarSwitch(hotbar)
+					if visualise then
+						local found = false
+						for i, v in store.inventory.hotbar do
+							if v.item and v.item.tool == tool.tool and i ~= (store.inventory.hotbarSlot + 1) then
+								hotbarSwitch(i - 1)
+								found = true
+								break
+							end
+						end
+						if not found then
+							switchItem(tool.tool)
 						end
 					else
 						switchItem(tool.tool)
@@ -1368,37 +1385,42 @@ run(function()
 			end
 
 			bedwars.ClientDamageBlock:Get('DamageBlock'):CallServerAsync({
-					blockRef = {blockPosition = dpos},
-					hitPosition = pos,
-					hitNormal = Vector3.FromNormalId(Enum.NormalId.Top)
-				}):andThen(function(result)
-					if result then
-						if result == 'cancelled' then
-							store.damageBlockFail = tick() + 1
-							return
-						end
-						if effects then
-							local blockdmg = (blockhealthbar.blockHealth - (result == 'destroyed' and 0 or getBlockHealth(dblock, dpos)))
-							customHealthbar = customHealthbar or bedwars.BlockBreaker.updateHealthbar
-							customHealthbar(bedwars.BlockBreaker, {blockPosition = dpos}, blockhealthbar.blockHealth, dblock:GetAttribute('MaxHealth'), blockdmg, dblock)
-							blockhealthbar.blockHealth = math.max(blockhealthbar.blockHealth - blockdmg, 0)
+				blockRef = {blockPosition = dpos},
+				hitPosition = pos,
+				hitNormal = Vector3.FromNormalId(Enum.NormalId.Top)
+			}):andThen(function(result)
+				if result then
+					if result == 'cancelled' then
+						table.clear(cache)
+						return
+					end
+					if result == 'destroyed' then
+						table.clear(cache) 
+					end
+					if effects then
+						local blockdmg = (blockhealthbar.blockHealth - (result == 'destroyed' and 0 or getBlockHealth(dblock, dpos)))
+						customHealthbar = customHealthbar or bedwars.BlockBreaker.updateHealthbar
+						customHealthbar(bedwars.BlockBreaker, {blockPosition = dpos}, blockhealthbar.blockHealth, dblock:GetAttribute('MaxHealth'), blockdmg, dblock)
+						blockhealthbar.blockHealth = math.max(blockhealthbar.blockHealth - blockdmg, 0)
+						pcall(function()
 							if blockhealthbar.blockHealth <= 0 then
 								bedwars.BlockBreaker.breakEffect:playBreak(dblock.Name, dpos, lplr)
-								if bedwars.BlockBreaker.healthbarMaid then bedwars.BlockBreaker.healthbarMaid:DoCleaning() end
+								bedwars.BlockBreaker.healthbarMaid:DoCleaning()
 								blockhealthbar.breakingBlockPosition = Vector3.zero
 							else
 								bedwars.BlockBreaker.breakEffect:playHit(dblock.Name, dpos, lplr)
 							end
-						end
-						if anim then
-							local animation = bedwars.AnimationUtil:playAnimation(lplr, bedwars.BlockController:getAnimationController():getAssetId(1))
-							bedwars.ViewmodelController:playAnimation(15)
-							task.wait(0.3)
-							animation:Stop()
-							animation:Destroy()
-						end
+						end)
 					end
-				end)
+					if anim then
+						local animation = bedwars.AnimationUtil:playAnimation(lplr, bedwars.BlockController:getAnimationController():getAssetId(1))
+						bedwars.ViewmodelController:playAnimation(15)
+						task.wait(0.3)
+						animation:Stop()
+						animation:Destroy()
+					end
+				end
+			end)
 
 			if effects then
 				return pos, path, target
@@ -4957,7 +4979,7 @@ run(function()
 	
 	local ESPKits = {
 		alchemist = {'alchemist_ingedients', 'thorns'},
-		beekeeper = {'bee', 'bee'},
+		beekeeper = {'bee','MeadowBee'},
 		bigman = {'treeOrb', 'natures_essence_1'},
 		ghost_catcher = {'ghost', 'ghost_orb'},
 		metal_detector = {'hidden-metal', 'iron'},
@@ -8910,7 +8932,9 @@ run(function()
     
     local function switchHotbarItem(block)
         if block and not block:GetAttribute('NoBreak') and not block:GetAttribute('Team'..(lplr:GetAttribute('Team') or 0)..'NoBreak') then
-            local tool, slot = store.tools[bedwars.ItemMeta[block.Name].block.breakType], nil
+            local meta = bedwars.ItemMeta[block.Name]
+			if not meta or not meta.block then return end
+			local tool, slot = store.tools[meta.block.breakType], nil
             if tool then
                 for i, v in store.inventory.hotbar do
                     if v.item and v.item.itemType == tool.itemType then slot = i - 1 break end
@@ -9925,6 +9949,7 @@ run(function()
 	local LayerCounter
 	local LayerColor
 	local UIStyle
+	local PositionDropdown
     local Folder = Instance.new('Folder')
     Folder.Parent = vape.gui
 
@@ -9992,10 +10017,12 @@ run(function()
 		end
 	end
 
-    local function scanSide(self, start, tab)
+    local function scanSide(self, start, tab, dirsHit)
 		local checkDirs = {
 			Vector3.new(3,0,0), Vector3.new(-3,0,0),
 			Vector3.new(0,0,3), Vector3.new(0,0,-3),
+			Vector3.new(3,0,3), Vector3.new(3,0,-3),
+			Vector3.new(-3,0,3), Vector3.new(-3,0,-3),
 			Vector3.new(0,3,0),
 		}
 		for _, side in ipairs(checkDirs) do
@@ -10003,7 +10030,9 @@ run(function()
 				local block = getPlacedBlock(start + (side * i))
 				if not block or block == self or block.Name == 'bed' then break end
 				if not block:GetAttribute('NoBreak') then
-					tab[block.Name] = (tab[block.Name] or 0) + 1
+					tab[block.Name] = math.max(tab[block.Name] or 0, i)
+					dirsHit[block.Name] = dirsHit[block.Name] or {}
+					dirsHit[block.Name][tostring(side)] = true
 				end
 			end
 		end
@@ -10020,13 +10049,20 @@ run(function()
     local BedTotals = {}
 
     local function getBedLayers(bed)
-		local start = bed.Position
+		local start = bedwars.BlockController:getBlockPosition(bed.Position) * 3
 		local layers = {}
+		local dirsHit = {}
 		local founded = {}
-		scanSide(bed, start, layers)
-		scanSide(bed, start + Vector3.new(0,0,3), layers)
+		scanSide(bed, start, layers, dirsHit)
+		scanSide(bed, start + Vector3.new(0,0,3), layers, dirsHit)
 		for blocks, amount in layers do 
-			table.insert(founded, {blocks, amount})
+			local coverage = 0
+			for _ in pairs(dirsHit[blocks] or {}) do
+				coverage = coverage + 1
+			end
+			if coverage >= 5 then
+				table.insert(founded, {blocks, amount})
+			end
 		end
 		table.sort(founded, function(a,b)
 			local healthA, healthB = getBlockHealth(a[1]), getBlockHealth(b[1])			
@@ -10048,12 +10084,12 @@ run(function()
 			image.BackgroundTransparency = 1
 			image.Image = bedwars.getIcon({itemType=block}, true)
 			image.Parent = frame
-			if amt >= 8 and (not LayerCounter or LayerCounter.Enabled) then
+			if amt >= 1 and (not LayerCounter or LayerCounter.Enabled) then
 				local txt = Instance.new('TextLabel')
 				txt.Name = 'Amount'
 				txt.Size = UDim2.fromScale(1,1)
 				txt.BackgroundTransparency = 1
-				local newamt = math.floor(amt / 6)
+				local newamt = amt
 				txt.Text = tostring(newamt)
 				txt.TextColor3 = LayerColor and Color3.fromHSV(LayerColor.Hue, LayerColor.Sat, LayerColor.Value) or Color3.fromRGB(250,250,250)
 				txt.TextSize = 24
@@ -10068,7 +10104,7 @@ run(function()
 		local bed = v.Adornee
 		local founded = getBedLayers(bed)
 		local total = 0
-		for _, data in founded do total = total + math.floor(data[2] / 6) end
+		for _, data in founded do total = math.max(total, data[2]) end
 		BedTotals[bed] = total
 		v.Enabled = #founded > 0 and UIStyle.Value == 'Original'
 		renderLayers(v.Frame, founded)
@@ -10216,13 +10252,27 @@ run(function()
         end)
     end
 
+    local currentCorner = 'Bottom Right'
+
     local function updateCompactPosition()
         local genUI = vape.gui:FindFirstChild('GeneratorCompactUI')
         local offset = 8
-        if genUI and genUI.Enabled then
+        if genUI and genUI.Enabled and currentCorner == 'Bottom Right' then
             offset = offset + 128
         end
-        compactMainFrame.Position = UDim2.new(1, -offset, 1, -8)
+        if currentCorner == 'Top Right' then
+            compactMainFrame.AnchorPoint = Vector2.new(1, 0)
+            compactMainFrame.Position = UDim2.new(1, -offset, 0, 8)
+        elseif currentCorner == 'Top Left' then
+            compactMainFrame.AnchorPoint = Vector2.new(0, 0)
+            compactMainFrame.Position = UDim2.new(0, 8, 0, 8)
+        elseif currentCorner == 'Bottom Left' then
+            compactMainFrame.AnchorPoint = Vector2.new(0, 1)
+            compactMainFrame.Position = UDim2.new(0, 8, 1, -8)
+        else
+            compactMainFrame.AnchorPoint = Vector2.new(1, 1)
+            compactMainFrame.Position = UDim2.new(1, -offset, 1, -8)
+        end
     end
     
     BedPlates = vape.Categories.Minigames:CreateModule({
@@ -10284,9 +10334,29 @@ run(function()
                 ref.billboard.Enabled = isOriginal
                 refreshAdornee(ref.billboard)
             end
+            if PositionDropdown.Object then
+                PositionDropdown.Object.Visible = not isOriginal
+            end
         end,
         Tooltip = 'pick between the floating world esp or a corner panel'
     })
+
+    PositionDropdown = BedPlates:CreateDropdown({
+        Name = 'Position',
+        List = {'Top Right', 'Top Left', 'Bottom Left', 'Bottom Right'},
+        Default = 'Bottom Right',
+        Function = function(val)
+            currentCorner = val
+            updateCompactPosition()
+        end,
+        Tooltip = 'pick w corner u want the panel chillin in'
+    })
+
+    task.defer(function()
+        if PositionDropdown and PositionDropdown.Object then
+            PositionDropdown.Object.Visible = (UIStyle.Value == 'Compact')
+        end
+    end)
     
     Background = BedPlates:CreateToggle({
         Name = 'Background',
