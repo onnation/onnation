@@ -5028,6 +5028,7 @@ run(function()
 	end
 
 	local function Added(v, icon, non)
+		if not v or not v:IsA("BasePart") then return end
 		if Reference[v] then return end
 		if Notify.Enabled then
 			vape:CreateNotification("KitESP", `New object is added {v.Name}`, 2)
@@ -5194,7 +5195,9 @@ run(function()
 
 		local connAdded = collectionService:GetInstanceAddedSignal(tag):Connect(function(v)
 			if tag == 'bee' and (v.Name:find('TamedBee') or v:FindFirstChild('TamedBee')) then return end
-			Added(v.PrimaryPart, icon, false)
+			if v.PrimaryPart then
+				Added(v.PrimaryPart, icon, false)
+			end
 		end)
 		table.insert(currentConnections, connAdded)
 		local connRemoved = collectionService:GetInstanceRemovedSignal(tag):Connect(function(v)
