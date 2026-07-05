@@ -68,7 +68,7 @@ local function solveCubic(c0, c1, c2, c3)
 		s1 = -t * math.cos(phi + math.pi / 3)
 		s2 = -t * math.cos(phi - math.pi / 3)
 		num = 3
-	else 
+	else
 		local sqrt_D = math.sqrt(D)
 		local u = cuberoot(sqrt_D - q)
 		local v = -cuberoot(sqrt_D + q)
@@ -217,7 +217,7 @@ function module.SolveTrajectory(origin, projectileSpeed, gravity, targetPos, tar
 	)
 	if solutions then
 		local posRoots = table.create(2)
-		for _, v in solutions do
+		for _, v in solutions do 
 			if v > 0 then
 				table.insert(posRoots, v)
 			end
