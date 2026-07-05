@@ -4979,7 +4979,7 @@ run(function()
 	
 	local ESPKits = {
 		alchemist = {'alchemist_ingedients', 'thorns'},
-		beekeeper = {'bee','MeadowBee'},
+		beekeeper = {'bee','MeadowBee', 'bees'},
 		bigman = {'treeOrb', 'natures_essence_1'},
 		ghost_catcher = {'ghost', 'ghost_orb'},
 		metal_detector = {'hidden-metal', 'iron'},
