@@ -1095,7 +1095,6 @@ run(function()
 		HarvestCrop = safeGetProto(safeGetProto(Knit.Controllers.CropController.KnitStart, 4), 1),
 		KaliyahPunch = safeGetProto(Knit.Controllers.DragonSlayerController.onKitLocalActivated, 1),
 		MageSelect = safeGetProto(Knit.Controllers.MageController.registerTomeInteraction, 1),
-		MinerDig = safeGetProto(Knit.Controllers.MinerController.setupMinerPrompts, 1),
 		PickupItem = Knit.Controllers.ItemDropController.checkForPickup,
 		PickupMetal = safeGetProto(Knit.Controllers.HiddenMetalController.onKitLocalActivated, 4),
 		ReportPlayer = require(lplr.PlayerScripts.TS.controllers.global.report['report-controller']).default.reportPlayer,
@@ -4975,11 +4974,12 @@ run(function()
 	local Color = {}
 	local Reference = {}
 	local Folder = Instance.new('Folder')
+    local currentSize = 36
 	Folder.Parent = vape.gui
 	
 	local ESPKits = {
 		alchemist = {'alchemist_ingedients', 'thorns'},
-		beekeeper = {'bee','MeadowBee', 'bees'},
+		beekeeper = {'bee', 'bee'},
 		bigman = {'treeOrb', 'natures_essence_1'},
 		ghost_catcher = {'ghost', 'ghost_orb'},
 		metal_detector = {'hidden-metal', 'iron'},
@@ -5002,6 +5002,27 @@ run(function()
 			{'pumpkin', 'pumpkin_seeds'},
 		},
 	}
+
+	local function isMineOnMyTeam(part)
+		local teamAttr = part:GetAttribute('Team') or part:GetAttribute('TeamId') or part:GetAttribute('TeamID')
+		if teamAttr then
+			local myTeam = lplr:GetAttribute('Team') or lplr:GetAttribute('TeamId') or lplr:GetAttribute('TeamID')
+			if myTeam and tostring(teamAttr) == tostring(myTeam) then
+				return true
+			end
+		end
+		local placedBy = part:GetAttribute('PlacedByUserId')
+		if placedBy then
+			local player = playersService:GetPlayerByUserId(placedBy)
+			if player then
+				local myTeam = lplr:GetAttribute('Team')
+				if myTeam and player:GetAttribute('Team') == myTeam then
+					return true
+				end
+			end
+		end
+		return false
+	end
 
 	local function getAlchemistImage(v)
 		local name = v and v.Name or ''
@@ -5028,7 +5049,6 @@ run(function()
 	end
 
 	local function Added(v, icon, non)
-		if not v or not v:IsA("BasePart") then return end
 		if Reference[v] then return end
 		if Notify.Enabled then
 			vape:CreateNotification("KitESP", `New object is added {v.Name}`, 2)
@@ -5037,14 +5057,14 @@ run(function()
 		billboard.Parent = Folder
 		billboard.Name = icon
 		billboard.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
-		billboard.Size = UDim2.fromOffset(36, 36)
+		billboard.Size = UDim2.fromOffset(currentSize, currentSize)
 		billboard.AlwaysOnTop = true
 		billboard.ClipsDescendants = false
 		billboard.Adornee = v
 		local blur = addBlur(billboard)
 		blur.Visible = Background.Enabled
 		local image = Instance.new('ImageLabel')
-		image.Size = UDim2.fromOffset(36, 36)
+		image.Size = UDim2.fromOffset(currentSize, currentSize)
 		image.Position = UDim2.fromScale(0.5, 0.5)
 		image.AnchorPoint = Vector2.new(0.5, 0.5)
 		image.BackgroundColor3 = Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
@@ -5073,14 +5093,14 @@ run(function()
 		billboard.Parent = Folder
 		billboard.Name = 'star'
 		billboard.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
-		billboard.Size = UDim2.fromOffset(36, 36)
+		billboard.Size = UDim2.fromOffset(currentSize, currentSize)
 		billboard.AlwaysOnTop = true
 		billboard.ClipsDescendants = false
 		billboard.Adornee = v
 		local blur = addBlur(billboard)
 		blur.Visible = Background.Enabled
 		local image = Instance.new('ImageLabel')
-		image.Size = UDim2.fromOffset(36, 36)
+		image.Size = UDim2.fromOffset(currentSize, currentSize)
 		image.Position = UDim2.fromScale(0.5, 0.5)
 		image.AnchorPoint = Vector2.new(0.5, 0.5)
 		image.BackgroundColor3 = Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
@@ -5104,7 +5124,39 @@ run(function()
 		table.clear(currentConnections)
 	end
 
+	local function isRealBee(v)
+		local beeId = v:GetAttribute('BeeId')
+		return beeId ~= nil and beeId > -1
+	end
+
 	local function addKit(tag, icon)
+		if tag == 'bee' then
+			local beeIcon = bedwars.getIcon({itemType = 'bee'}, true)
+			for _, tagName in {'bee', 'MeadowBee'} do
+				local connAdded = collectionService:GetInstanceAddedSignal(tagName):Connect(function(v)
+					if v:IsA("Model") and v.PrimaryPart then
+						task.wait(0.1)
+						if isRealBee(v) then
+							Added(v.PrimaryPart, beeIcon, true)
+						end
+					end
+				end)
+				table.insert(currentConnections, connAdded)
+				local connRemoved = collectionService:GetInstanceRemovedSignal(tagName):Connect(function(v)
+					if v.PrimaryPart and Reference[v.PrimaryPart] then
+						Reference[v.PrimaryPart]:Destroy()
+						Reference[v.PrimaryPart] = nil
+					end
+				end)
+				table.insert(currentConnections, connRemoved)
+				for _, v in collectionService:GetTagged(tagName) do
+					if v:IsA("Model") and v.PrimaryPart and isRealBee(v) then
+						Added(v.PrimaryPart, beeIcon, true)
+					end
+				end
+			end
+			return
+		end
 		if tag == 'alchemist_ingedients' then
 			local connAdded = collectionService:GetInstanceAddedSignal(tag):Connect(function(v)
 				if v.PrimaryPart then
@@ -5113,14 +5165,14 @@ run(function()
 					local billboard = Instance.new('BillboardGui')
 					billboard.Parent = Folder
 					billboard.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
-					billboard.Size = UDim2.fromOffset(36, 36)
+					billboard.Size = UDim2.fromOffset(currentSize, currentSize)
 					billboard.AlwaysOnTop = true
 					billboard.ClipsDescendants = false
 					billboard.Adornee = v.PrimaryPart
 					local blur = addBlur(billboard)
 					blur.Visible = Background.Enabled
 					local image = Instance.new('ImageLabel')
-					image.Size = UDim2.fromOffset(36, 36)
+					image.Size = UDim2.fromOffset(currentSize, currentSize)
 					image.Position = UDim2.fromScale(0.5, 0.5)
 					image.AnchorPoint = Vector2.new(0.5, 0.5)
 					image.BackgroundColor3 = Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
@@ -5147,14 +5199,14 @@ run(function()
 					local billboard = Instance.new('BillboardGui')
 					billboard.Parent = Folder
 					billboard.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
-					billboard.Size = UDim2.fromOffset(36, 36)
+					billboard.Size = UDim2.fromOffset(currentSize, currentSize)
 					billboard.AlwaysOnTop = true
 					billboard.ClipsDescendants = false
 					billboard.Adornee = v.PrimaryPart
 					local blur = addBlur(billboard)
 					blur.Visible = Background.Enabled
 					local image = Instance.new('ImageLabel')
-					image.Size = UDim2.fromOffset(36, 36)
+					image.Size = UDim2.fromOffset(currentSize, currentSize)
 					image.Position = UDim2.fromScale(0.5, 0.5)
 					image.AnchorPoint = Vector2.new(0.5, 0.5)
 					image.BackgroundColor3 = Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
@@ -5193,11 +5245,31 @@ run(function()
 			return
 		end
 
+		if tag == 'petrified-player' then
+			local connAdded = collectionService:GetInstanceAddedSignal(tag):Connect(function(v)
+				if v.PrimaryPart and not isMineOnMyTeam(v.PrimaryPart) then
+					Added(v.PrimaryPart, icon, false)
+				end
+			end)
+			table.insert(currentConnections, connAdded)
+			local connRemoved = collectionService:GetInstanceRemovedSignal(tag):Connect(function(v)
+				if v.PrimaryPart and Reference[v.PrimaryPart] then
+					Reference[v.PrimaryPart]:Destroy()
+					Reference[v.PrimaryPart] = nil
+				end
+			end)
+			table.insert(currentConnections, connRemoved)
+			for _, v in collectionService:GetTagged(tag) do
+				if v.PrimaryPart and not isMineOnMyTeam(v.PrimaryPart) then
+					Added(v.PrimaryPart, icon, false)
+				end
+			end
+			return
+		end
+
 		local connAdded = collectionService:GetInstanceAddedSignal(tag):Connect(function(v)
 			if tag == 'bee' and (v.Name:find('TamedBee') or v:FindFirstChild('TamedBee')) then return end
-			if v.PrimaryPart then
-				Added(v.PrimaryPart, icon, false)
-			end
+			Added(v.PrimaryPart, icon, false)
 		end)
 		table.insert(currentConnections, connAdded)
 		local connRemoved = collectionService:GetInstanceRemovedSignal(tag):Connect(function(v)
@@ -5363,6 +5435,42 @@ run(function()
             end
         end,
         Darker = true
+    })
+    Sizeable = KitESP:CreateToggle({
+        Name = "Sizeable",
+        Default = false,
+        Function = function(callback)
+            if callback then
+                SizeSlider.Object.Visible = true
+                currentSize = SizeSlider.Value or 36
+                for _, v in Reference do
+                    v.Size = UDim2.fromOffset(currentSize, currentSize)
+                    v.ImageLabel.Size = UDim2.fromOffset(currentSize, currentSize)
+                end
+            else
+                SizeSlider.Object.Visible = false
+                currentSize = 36
+                for _, v in Reference do
+                    v.Size = UDim2.fromOffset(currentSize, currentSize)
+                    v.ImageLabel.Size = UDim2.fromOffset(currentSize, currentSize)
+                end
+            end
+        end
+    })
+    SizeSlider = KitESP:CreateSlider({
+        Name = "Size",
+        Default = 36,
+        Min = 10,
+        Max = 80,
+        Visible = false,
+        Function = function(value)
+            if not Sizeable.Enabled then return end
+            currentSize = value
+            for _, v in Reference do
+                v.Size = UDim2.fromOffset(value, value)
+                v.ImageLabel.Size = UDim2.fromOffset(value, value)
+            end
+        end
     })
 
     task.defer(function()
@@ -6369,7 +6477,7 @@ run(function()
 						Range = 125,
 						Part = "RootPart",
 						Players = true,
-						Sort = sortmethods[Sorts.Value],
+						Sort = sortmethods[targetSelectionMode.Value],
 						Wallcheck = Legit.Enabled
 					})
 
@@ -6408,7 +6516,7 @@ run(function()
 						Range = 14,
 						Part = "RootPart",
 						Players = true,
-						Sort = sortmethods[Sorts.Value],
+						Sort = sortmethods[targetSelectionMode.Value],
 						Wallcheck = Legit.Enabled
 					})
 
@@ -6436,10 +6544,40 @@ run(function()
 		end,
         miner = function()
             kitCollection('petrified-player', function(v)
-                bedwars.Client:Get(remotes.MinerDig):SendToServer({
-                    petrifyId = v:GetAttribute('PetrifyId')
-                })
+                local petrifyId = v:GetAttribute('petrifyId') or v:GetAttribute('PetrifyId')
+                if petrifyId then
+                    bedwars.Client:Get(remotes.DestroyPetrifiedPlayer):SendToServer({
+                        petrifyId = petrifyId
+                    })
+                end
             end, 6, true)
+        end,
+        ice_queen = function()
+            local useAbilityRemote = replicatedStorage:WaitForChild("events-@easy-games/game-core:shared/game-core-networking@getEvents.Events"):WaitForChild("useAbility")
+            local lastUse = 0
+            local function checkAndUse()
+                if not entitylib.isAlive then return end
+                for _, ent in entitylib.List do
+                    if ent.Targetable and ent.Character then
+                        local stacks = ent.Character:GetAttribute('IceQueenStacks') or 0
+                        if stacks >= 4 then
+                            local now = tick()
+                            if now - lastUse > 1 then
+                                useAbilityRemote:FireServer("ice_queen")
+                                lastUse = now
+                                task.wait(0.5)
+                                return
+                            end
+                        end
+                    end
+                end
+            end
+            task.spawn(function()
+                while AutoKit.Enabled do
+                    checkAndUse()
+                    task.wait(0.1)
+                end
+            end)
         end,
 		styx = function()
 			local exitPortalUUID = ""
@@ -6553,7 +6691,7 @@ run(function()
 						Players = Targets.Players.Enabled,
 						NPCs = Targets.NPCs.Enabled,
 						Wallcheck = Targets.Walls.Enabled,
-						Sort = sortmethods[Sorts.Value]
+						Sort = sortmethods[targetSelectionMode.Value]
 					})
 
 					if not plr or not store.hand.tool then
@@ -6575,7 +6713,7 @@ run(function()
 							Players = Targets.Players.Enabled,
 							NPCs = Targets.NPCs.Enabled,
 							Wallcheck = Targets.Walls.Enabled,
-							Sort = sortmethods[Sorts.Value]
+							Sort = sortmethods[targetSelectionMode.Value]
 						})
 						if plr2 then
 							local targetPos2 = plr2.RootPart.Position
@@ -6600,7 +6738,7 @@ run(function()
 							Players = Targets.Players.Enabled,
 							NPCs = Targets.NPCs.Enabled,
 							Wallcheck = Targets.Walls.Enabled,
-							Sort = sortmethods[Sorts.Value]
+							Sort = sortmethods[targetSelectionMode.Value]
 						})
 						if plr3 then
 							local targetPos3 = plr3.RootPart.Position
@@ -6677,7 +6815,7 @@ run(function()
 					Players = Targets.Players.Enabled,
 					NPCs = Targets.NPCs.Enabled,
 					Wallcheck = Targets.Walls.Enabled,
-					Sort = sortmethods[Sorts.Value]
+					Sort = sortmethods[targetSelectionMode.Value]
 				})
 				if plr or not Legit.Enabled then
 					bedwars.AbilityController:useAbility('midnight')
@@ -7038,7 +7176,7 @@ run(function()
 								Players = Targets.Players.Enabled,
 								NPCs = Targets.NPCs.Enabled,
 								Wallcheck = Targets.Walls.Enabled,
-								Sort = sortmethods[Sorts.Value]
+								Sort = sortmethods[targetSelectionMode.Value]
 							})
 							if plr then shouldAscend = true end
 						end
@@ -7083,7 +7221,7 @@ run(function()
 							Players = Targets.Players.Enabled,
 							NPCs = Targets.NPCs.Enabled,
 							Wallcheck = Targets.Walls.Enabled,
-							Sort = sortmethods[Sorts.Value]
+							Sort = sortmethods[targetSelectionMode.Value]
 						})
 
 						if target and target.RootPart then
@@ -7128,7 +7266,7 @@ run(function()
 							Players = Targets.Players.Enabled,
 							NPCs = Targets.NPCs.Enabled,
 							Wallcheck = Targets.Walls.Enabled,
-							Sort = sortmethods[Sorts.Value]
+							Sort = sortmethods[targetSelectionMode.Value]
 						})
 
 						if plr then
@@ -7157,7 +7295,7 @@ run(function()
 							Players = Targets.Players.Enabled,
 							NPCs = Targets.NPCs.Enabled,
 							Wallcheck = Targets.Walls.Enabled,
-							Sort = sortmethods[Sorts.Value]
+							Sort = sortmethods[targetSelectionMode.Value]
 						})
 
 						if plr then
@@ -7247,7 +7385,7 @@ run(function()
 						Players = Targets.Players.Enabled,
 						NPCs = Targets.NPCs.Enabled,
 						Wallcheck = Targets.Walls.Enabled,
-						Sort = sortmethods[Sorts.Value]
+						Sort = sortmethods[targetSelectionMode.Value]
 					})
 
 					if plr and Legit.Enabled and (entitylib.character.RootPart.Position - plr.RootPart.Position).Magnitude > 23 then
@@ -7580,7 +7718,7 @@ run(function()
 						Players = Targets.Players.Enabled,
 						NPCs = Targets.NPCs.Enabled,
 						Wallcheck = Targets.Walls.Enabled,
-						Sort = sortmethods[Sorts.Value]
+						Sort = sortmethods[targetSelectionMode.Value]
 					})
 
 					local grit = lplr:GetAttribute('Grit') or 0
@@ -7607,7 +7745,7 @@ run(function()
 						Players = Targets.Players.Enabled,
 						NPCs = Targets.NPCs.Enabled,
 						Wallcheck = Targets.Walls.Enabled,
-						Sort = sortmethods[Sorts.Value]
+						Sort = sortmethods[targetSelectionMode.Value]
 					})
 					if plr and plr.RootPart then
 						local dir = (plr.RootPart.Position - entitylib.character.RootPart.Position).Unit
@@ -8481,10 +8619,6 @@ run(function()
 							if (currentTime - (v:GetAttribute('ClientDropTime') or 0)) < 2 then continue end
 							if (currentTime - lastPickupTime) < pickupDelaySeconds then continue end
 
-							if isnetworkowner(v) and Network.Enabled and humanoidHealth > 0 then
-								v.CFrame = CFrame.new(localPosition - Vector3.new(0, 3, 0))
-							end
-
 							local offset = v.Position - localPosition
 							local distanceSquared = offset.X * offset.X + offset.Y * offset.Y + offset.Z * offset.Z
 
@@ -8538,10 +8672,6 @@ run(function()
 		Max = 500,
 		Default = 0,
 		Suffix = 'ms'
-	})
-	Network = PickupRange:CreateToggle({
-		Name = 'Network TP',
-		Default = true
 	})
 	Lower = PickupRange:CreateToggle({
 		Name = 'Feet Check'
@@ -9953,6 +10083,7 @@ run(function()
 	local LayerColor
 	local UIStyle
 	local PositionDropdown
+	local IgnoreTeam
     local Folder = Instance.new('Folder')
     Folder.Parent = vape.gui
 
@@ -9963,7 +10094,6 @@ run(function()
     compactUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     compactUI.DisplayOrder = 10
     compactUI.ResetOnSpawn = false
-
     local compactMainFrame = Instance.new('Frame')
     compactMainFrame.Name = 'MainFrame'
     compactMainFrame.Parent = compactUI
@@ -9974,16 +10104,13 @@ run(function()
     compactMainFrame.Size = UDim2.new(0, 150, 0, 0)
     compactMainFrame.AutomaticSize = Enum.AutomaticSize.Y
     compactMainFrame.AnchorPoint = Vector2.new(1, 1)
-
     local compactCorner = Instance.new('UICorner')
     compactCorner.CornerRadius = UDim.new(0, 8)
     compactCorner.Parent = compactMainFrame
-
     local compactListLayout = Instance.new('UIListLayout')
     compactListLayout.Padding = UDim.new(0, 4)
     compactListLayout.SortOrder = Enum.SortOrder.LayoutOrder
     compactListLayout.Parent = compactMainFrame
-
     local compactPadding = Instance.new('UIPadding')
     compactPadding.PaddingTop = UDim.new(0, 6)
     compactPadding.PaddingBottom = UDim.new(0, 6)
@@ -9992,9 +10119,9 @@ run(function()
     compactPadding.Parent = compactMainFrame
     
 	local teamColors = {
-		[1] = {name = "Blue",   color = Color3.fromRGB(85, 150, 255)},
+		[1] = {name = "Blue", color = Color3.fromRGB(85, 150, 255)},
 		[2] = {name = "Orange", color = Color3.fromRGB(255, 150, 50)},
-		[3] = {name = "Pink",   color = Color3.fromRGB(255, 100, 200)},
+		[3] = {name = "Pink", color = Color3.fromRGB(255, 100, 200)},
 		[4] = {name = "Yellow", color = Color3.fromRGB(255, 255, 50)}
 	}
     
@@ -10007,9 +10134,16 @@ run(function()
         return {name = 'Enemy', color = Color3.new(1, 1, 1)}
     end
     
-    local function updateLayerTextColor()
-		for _, billboard in pairs(Reference) do
-			for _, img in billboard.Frame:GetChildren() do
+    local function isMyBed(bed)
+        local myTeam = lplr.Character and (lplr.Character:GetAttribute('Team') or lplr.Character:GetAttribute('TeamId'))
+        local bedTeam = bed:GetAttribute('TeamID') or bed:GetAttribute('Team') or bed:GetAttribute('TeamId')
+        if not myTeam or not bedTeam then return false end
+        return tonumber(myTeam) == tonumber(bedTeam)
+    end
+    
+	local function updateLayerTextColor()
+		for _, ref in pairs(Reference) do
+			for _, img in ref.billboard.Frame:GetChildren() do
 				if img:IsA('ImageLabel') then
 					local txt = img:FindFirstChild('Amount')
 					if txt then
@@ -10109,12 +10243,13 @@ run(function()
 		local total = 0
 		for _, data in founded do total = math.max(total, data[2]) end
 		BedTotals[bed] = total
-		v.Enabled = #founded > 0 and UIStyle.Value == 'Original'
+		local mine = isMyBed(bed)
+		v.Enabled = #founded > 0 and UIStyle.Value == 'Original' and not mine
 		renderLayers(v.Frame, founded)
 		if Reference[bed] and Reference[bed].compactRow then
 			renderLayers(Reference[bed].compactRow.iconsFrame, founded)
 			Reference[bed].compactRow.countLabel.Text = tostring(total)
-			Reference[bed].compactRow.frame.Visible = #founded > 0
+			Reference[bed].compactRow.frame.Visible = #founded > 0 and not (mine and IgnoreTeam and IgnoreTeam.Enabled)
 		end
     end
     
@@ -10313,6 +10448,17 @@ run(function()
                     end
                 end))
                 BedPlates:Clean(runService.Heartbeat:Connect(updateCompactPosition))
+                BedPlates:Clean(runService.Heartbeat:Connect(function()
+                    if not TeamColor.Enabled and Background.Enabled then
+                        local col = Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+                        for bed, ref in pairs(Reference) do
+                            ref.billboard.Frame.BackgroundColor3 = col
+                        end
+                    end
+                    if LayerCounter.Enabled then
+                        updateLayerTextColor()
+                    end
+                end))
             else
                 for _, v in pairs(Reference) do
                     v.billboard:Destroy()
@@ -10340,6 +10486,9 @@ run(function()
             if PositionDropdown.Object then
                 PositionDropdown.Object.Visible = not isOriginal
             end
+            if IgnoreTeam and IgnoreTeam.Object then
+                IgnoreTeam.Object.Visible = not isOriginal
+            end
         end,
         Tooltip = 'pick between the floating world esp or a corner panel'
     })
@@ -10359,7 +10508,21 @@ run(function()
         if PositionDropdown and PositionDropdown.Object then
             PositionDropdown.Object.Visible = (UIStyle.Value == 'Compact')
         end
+        if IgnoreTeam and IgnoreTeam.Object then
+            IgnoreTeam.Object.Visible = (UIStyle.Value == 'Compact')
+        end
     end)
+    
+    IgnoreTeam = BedPlates:CreateToggle({
+        Name = 'Ignore Team',
+        Default = false,
+        Function = function(callback)
+            for bed, ref in pairs(Reference) do
+                refreshAdornee(ref.billboard)
+            end
+        end,
+        Tooltip = 'wont show ur own team bed on the compact panel'
+    })
     
     Background = BedPlates:CreateToggle({
         Name = 'Background',
@@ -10377,21 +10540,7 @@ run(function()
         end,
         Default = true
     })
-    
-    TeamColor = BedPlates:CreateToggle({
-        Name = 'Team Color',
-        Default = true,
-        Function = function(callback)
-            if Color.Object then
-                Color.Object.Visible = Background.Enabled and not callback
-            end
-            for bed, billboard in pairs(Reference) do
-                billboard.Frame.BackgroundColor3 = callback and getBedTeamColor(bed) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
-                billboard.Frame.BackgroundTransparency = 1 - (Background.Enabled and (callback and 0.5 or Color.Opacity) or 0)
-            end
-        end
-    })
-    
+
     Color = BedPlates:CreateColorSlider({
         Name = 'Background Color',
         DefaultValue = 0,
@@ -10409,6 +10558,20 @@ run(function()
         Visible = false,
         Darker = true
     })
+    
+    TeamColor = BedPlates:CreateToggle({
+        Name = 'Team Color',
+        Default = true,
+        Function = function(callback)
+            if Color.Object then
+                Color.Object.Visible = Background.Enabled and not callback
+            end
+            for bed, billboard in pairs(Reference) do
+                billboard.Frame.BackgroundColor3 = callback and getBedTeamColor(bed).color or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+                billboard.Frame.BackgroundTransparency = 1 - (Background.Enabled and (callback and 0.5 or Color.Opacity) or 0)
+            end
+        end
+    })
 
 	LayerCounter = BedPlates:CreateToggle({
 		Name = 'Layer Counter',
@@ -10424,7 +10587,7 @@ run(function()
 	})
 	LayerColor = BedPlates:CreateColorSlider({
 		Name = 'Counter Text Color',
-		DefaultSat = 0,
+		DefaultSat = 1,
 		DefaultValue = 1,
 		Function = function()
 			updateLayerTextColor()
@@ -12332,11 +12495,12 @@ run(function()
 						local distance = (localPosition - v.PrimaryPart.Position).Magnitude
 						
 						if distance <= range then
+							if CollectionDelay.Enabled and DelaySlider.Value > 0 then
+								task.wait(DelaySlider.Value)
+							end
 							if collectMetal(v) then
 								collectedThisCycle = true
-								if CollectionDelay.Enabled and DelaySlider.Value > 0 then
-									task.wait(DelaySlider.Value)
-								else
+								if Animation.Enabled then
 									task.wait(0.15)
 								end
 							end
@@ -12344,7 +12508,7 @@ run(function()
 					end
 				end
                 
-                task.wait(collectedThisCycle and 0.3 or 0.5)
+                task.wait(collectedThisCycle and (Animation.Enabled and 0.3 or 0.05) or 0.5)
             end
             
             collectionActive = false
@@ -12494,7 +12658,7 @@ run(function()
             if ESPColor and ESPColor.Object then ESPColor.Object.Visible = callback end
             for _, v in Reference do
                 if v and v:FindFirstChild("ImageLabel") then
-                    local blur = v:FindFirstChild("BlurEffect")
+                    local blur = v:FindFirstChild("Blur")
                     if blur then blur.Visible = callback end
                     v.ImageLabel.BackgroundTransparency = 1 - (callback and ESPColor.Opacity or 0)
                 end
@@ -12545,12 +12709,13 @@ run(function()
         if DelaySlider and DelaySlider.Object then
             DelaySlider.Object.Visible = CollectionDelay.Enabled  
         end
-        if ESPNotify and ESPNotify.Object then ESPNotify.Object.Visible = false end
-        if ESPBackground and ESPBackground.Object then ESPBackground.Object.Visible = false end
-        if ESPColor and ESPColor.Object then ESPColor.Object.Visible = false end
-        if HoldingCheck and HoldingCheck.Object then HoldingCheck.Object.Visible = false end
-        if DistanceCheck and DistanceCheck.Object then DistanceCheck.Object.Visible = false end
-        if DistanceLimit and DistanceLimit.Object then DistanceLimit.Object.Visible = false end
+        local espOn = ESPToggle and ESPToggle.Enabled
+        if ESPNotify and ESPNotify.Object then ESPNotify.Object.Visible = espOn end
+        if ESPBackground and ESPBackground.Object then ESPBackground.Object.Visible = espOn end
+        if ESPColor and ESPColor.Object then ESPColor.Object.Visible = (espOn and ESPBackground.Enabled) end
+        if HoldingCheck and HoldingCheck.Object then HoldingCheck.Object.Visible = espOn end
+        if DistanceCheck and DistanceCheck.Object then DistanceCheck.Object.Visible = espOn end
+        if DistanceLimit and DistanceLimit.Object then DistanceLimit.Object.Visible = (espOn and DistanceCheck.Enabled) end
     end)
 end)
 
@@ -14079,7 +14244,7 @@ run(function()
                                 Part = 'RootPart',
                                 Players = targetSettings.Players.Enabled,
                                 NPCs = targetSettings.NPCs.Enabled,
-                                Sort = sortmethods[Sorts.Value]
+                                Sort = sortmethods[targetSelectionMode.Value]
                             })
 
                             if nearestEntity then
@@ -14148,15 +14313,6 @@ run(function()
         Name = 'Use Lightning Storm'
     })
 
-    shockwaveToggle = autoZenoModule:CreateToggle({
-        Name = 'Auto Shockwave',
-        Function = function(enabled)
-            pcall(function()
-                shockwaveRadius.Object.Visible = enabled
-            end)
-        end
-    })
-
     shockwaveRadius = autoZenoModule:CreateSlider({
         Name = 'Shockwave Range',
         Visible = false,
@@ -14168,6 +14324,15 @@ run(function()
         end,
         Decimal = 5,
         Default = 12
+    })
+
+    shockwaveToggle = autoZenoModule:CreateToggle({
+        Name = 'Auto Shockwave',
+        Function = function(enabled)
+            pcall(function()
+                shockwaveRadius.Object.Visible = enabled
+            end)
+        end
     })
 
     attackRange = autoZenoModule:CreateSlider({
@@ -14491,6 +14656,7 @@ end)
 
 run(function()
     local Beekeeper
+    local isRealBee
     local CollectionToggle
 	local LimitToNet
 	local maxBeehiveLevel = 10
@@ -14554,20 +14720,8 @@ run(function()
     local function AddedBee(v)
         if BeesReference[v] then return end
         local model = v.Parent
-        if model then
-            if model.Name:find("TamedBee") or model:FindFirstChild("TamedBee") then
-                return 
-            end
-            
-            if model:GetAttribute("IsTamed") or model:GetAttribute("Tamed") then
-                return 
-            end
-            
-            for _, tag in pairs(collectionService:GetTags(model)) do
-                if tag:lower():find("tamed") then
-                    return 
-                end
-            end
+        if model and not isRealBee(model) then
+            return
         end
         
         local billboard = Instance.new('BillboardGui')
@@ -14826,31 +14980,36 @@ run(function()
         end
     end
 
+    isRealBee = function(v)
+        local beeId = v:GetAttribute('BeeId')
+        return beeId ~= nil and beeId > -1
+    end
+
     local function setupBeesESP()
-        for _, v in collectionService:GetTagged('bee') do
-            if v:IsA("Model") and v.PrimaryPart then
-                if not v.Name:find("TamedBee") and not v:FindFirstChild("TamedBee") then
-                    AddedBee(v.PrimaryPart)
+        for _, tagName in {'bee', 'MeadowBee'} do
+            for _, v in collectionService:GetTagged(tagName) do
+                if v:IsA("Model") and v.PrimaryPart then
+                    if isRealBee(v) then
+                        AddedBee(v.PrimaryPart)
+                    end
                 end
             end
+
+            Beekeeper:Clean(collectionService:GetInstanceAddedSignal(tagName):Connect(function(v)
+                if v:IsA("Model") and v.PrimaryPart then
+                    task.wait(0.1)
+                    if isRealBee(v) then
+                        AddedBee(v.PrimaryPart)
+                    end
+                end
+            end))
+
+            Beekeeper:Clean(collectionService:GetInstanceRemovedSignal(tagName):Connect(function(v)
+                if v.PrimaryPart then
+                    RemovedBee(v.PrimaryPart)
+                end
+            end))
         end
-
-        Beekeeper:Clean(collectionService:GetInstanceAddedSignal('bee'):Connect(function(v)
-            if v:IsA("Model") and v.PrimaryPart then
-                task.wait(0.1)
-                if not v.Name:find("TamedBee") and not v:FindFirstChild("TamedBee") then
-                    AddedBee(v.PrimaryPart)
-                end
-            end
-        end))
-
-        Beekeeper:Clean(collectionService:GetInstanceRemovedSignal('bee'):Connect(function(v)
-            if v.PrimaryPart then
-                RemovedBee(v.PrimaryPart)
-            end
-        end))
-        
-
     end
 
     local function setupBeehiveESP()
@@ -14873,64 +15032,43 @@ run(function()
         return store.hand.tool.Name == 'bee_net' or store.hand.tool.Name == 'bee-net'
     end
 
+	local function kitCollection(id, func, range, specific)
+		repeat
+			if entitylib.isAlive then
+				local objs = type(id) == 'table' and id or collection(id, Beekeeper)
+				local localPosition = entitylib.character.RootPart.Position
+				for _, v in objs do
+					if not Beekeeper.Enabled then break end
+					local part = not v:IsA('Model') and v or v.PrimaryPart
+					if part and (part.Position - localPosition).Magnitude <= range then
+						local success, err = pcall(func, v)
+						task.wait(0.02)
+					end
+				end
+			end
+			task.wait(0.05)
+		until not Beekeeper.Enabled
+	end
+
+    local collectionThreads = {}
+
     local function startCollection()
         collectionRunning = true
-        task.spawn(function()
-            while collectionRunning and Beekeeper.Enabled and CollectionToggle.Enabled do
-                if not entitylib.isAlive then 
-                    task.wait(0.1) 
-                    continue 
-                end
-                
-                if LimitToNet.Enabled and not isHoldingBeeNet() then
-                    task.wait(0.5)
-                    continue
-                end
-                
-                local localPosition = entitylib.character.RootPart.Position
-                local range = RangeSlider.Value
-                local beesFound = false
-                
-                for _, v in collectionService:GetTagged('bee') do
-                    if not collectionRunning or not Beekeeper.Enabled or not CollectionToggle.Enabled then 
-                        break 
-                    end
-                    
-                    if LimitToNet.Enabled and not isHoldingBeeNet() then
-                        break
-                    end
-                    
-                    if v:IsA("Model") and v.PrimaryPart then
-                        local beePos = v.PrimaryPart.Position
-                        local distance = (localPosition - beePos).Magnitude
-                        
-                        if distance <= range then
-                            beesFound = true
-                            
-                            if CollectionDelay.Enabled and DelaySlider.Value > 0 then
-                                task.wait(DelaySlider.Value)
-                            end
-                            
-                            if LimitToNet.Enabled and not isHoldingBeeNet() then
-                                break
-                            end
-                            
-                            local beeId = v:GetAttribute('BeeId')
-                            if beeId then
-                                bedwars.Client:Get(remotes.BeePickup):SendToServer({beeId = beeId})
-                                task.wait(0.1)
-                            end
-                        end
-                    end
-                end
-                
-                if not beesFound then
-                    task.wait(0.2)
-                else
-                    task.wait(0.1)
-                end
+        for _, tagName in {'bee', 'MeadowBee'} do
+            local thread = task.spawn(function()
+                kitCollection(tagName, function(v)
+                    if not isRealBee(v) then return end
+                    if LimitToNet.Enabled and not isHoldingBeeNet() then return end
+                    bedwars.Client:Get(remotes.BeePickup):SendToServer({beeId = v:GetAttribute('BeeId')})
+                end, RangeSlider.Value, false)
+            end)
+            table.insert(collectionThreads, thread)
+        end
+        Beekeeper:Clean(function()
+            for _, thread in collectionThreads do
+                task.cancel(thread)
             end
-            collectionRunning = false
+            table.clear(collectionThreads)
         end)
     end
 
@@ -19761,15 +19899,37 @@ run(function()
 		Tooltip = 'changes your cursor\'s image.',
 		Function = function(callback)
 			if callback then
-				task.spawn(function()
-					repeat task.wait()
-						if customMouseIcon.Enabled then
-							UIS.MouseIcon = 'rbxassetid://' .. customIcon.Value
-						else
-							UIS.MouseIcon = mouseIcons[mouseDropdown.Value]
-						end
-					until not CustomCursor.Enabled
-				end)
+				local function applyIcon()
+					if customMouseIcon.Enabled then
+						UIS.MouseIcon = 'rbxassetid://' .. customIcon.Value
+					else
+						UIS.MouseIcon = mouseIcons[mouseDropdown.Value]
+					end
+				end
+				applyIcon()
+				CustomCursor:Clean(UIS:GetPropertyChangedSignal('MouseIcon'):Connect(function()
+					if CustomCursor.Enabled then
+						applyIcon()
+					end
+				end))
+				local playerGui = lplr:FindFirstChildOfClass('PlayerGui')
+				if playerGui then
+					for _, obj in ipairs(playerGui:GetDescendants()) do
+						pcall(function()
+							if obj:IsA('GuiButton') and obj.MouseIcon ~= '' then
+								obj.MouseIcon = ''
+							end
+						end)
+					end
+					CustomCursor:Clean(playerGui.DescendantAdded:Connect(function(obj)
+						pcall(function()
+							if obj:IsA('GuiButton') then
+								obj.MouseIcon = ''
+							end
+						end)
+					end))
+				end
+				CustomCursor:Clean(runService.Heartbeat:Connect(applyIcon))
 			else
 				UIS.MouseIcon = ''
 				task.wait()
@@ -21934,6 +22094,135 @@ run(function()
 end)
 
 run(function()
+	pcall(function()
+		vape:Remove(v)
+	end)
+	local ProjectileExploit
+	local InstaKill
+	local Targets
+	local Range
+	local List
+	local rayCheck = RaycastParams.new()
+	rayCheck.FilterType = Enum.RaycastFilterType.Include
+	local projectileRemote = {InvokeServer = function() end}
+	local FireDelays = {}
+	task.spawn(function()
+		projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
+	end)
+	
+	local function getAmmo(check)
+		for _, item in store.inventory.inventory.items do
+			if check.ammoItemTypes and table.find(check.ammoItemTypes, item.itemType) then
+				return item.itemType
+			end
+		end
+	end
+	
+	local function getProjectiles()
+		local items = {}
+		for _, item in store.inventory.inventory.items do
+			local proj = bedwars.ItemMeta[item.itemType].projectileSource
+			local ammo = proj and (getAmmo(proj) or InstaKill.Enabled and item.itemType:find('bow') and 'arrow')
+			if ammo then
+				table.insert(items, {
+					item,
+					ammo,
+					proj.projectileType(ammo),
+					proj
+				})
+			end
+		end
+		return items
+	end
+	
+	ProjectileExploit = vape.Categories.Blatant:CreateModule({
+		Name = 'ProjectileExploit',
+		Function = function(callback)
+			if callback then
+				repeat
+					if (workspace:GetServerTimeNow() - bedwars.SwordController.lastAttack) > 0.5 then
+						local ent = entitylib.EntityPosition({
+							Part = 'RootPart',
+							Range = Range.Value,
+							Players = Targets.Players.Enabled,
+							NPCs = Targets.NPCs.Enabled,
+							Wallcheck = Targets.Walls.Enabled
+						})
+	
+						if ent then
+							local pos = entitylib.character.RootPart.Position
+							for _, data in getProjectiles() do
+								local item, ammo, projectile, itemMeta = unpack(data)
+								if (FireDelays[item.itemType] or 0) < tick() then
+									rayCheck.FilterDescendantsInstances = {workspace.Map}
+									local meta = bedwars.ProjectileMeta[projectile]
+									local projSpeed, gravity = meta.launchVelocity, meta.gravitationalAcceleration or 196.2
+									local calc = prediction.SolveTrajectory(pos, projSpeed, gravity, ent.RootPart.Position, ent.RootPart.Velocity, workspace.Gravity, ent.HipHeight, ent.Jumping and 42.6 or nil, rayCheck)
+									if calc then
+										targetinfo.Targets[ent] = tick() + 1
+										local switched = switchItem(item.tool)
+	
+										task.spawn(function()
+											if InstaKill.Enabled and ammo:find('arrow') then
+												ammo = 'volley_arrow'
+											end
+											local dir, id = CFrame.lookAt(pos, calc).LookVector, httpService:GenerateGUID(true)
+											local shootPosition = (CFrame.new(pos, calc) * CFrame.new(Vector3.new(-bedwars.BowConstantsTable.RelX, -bedwars.BowConstantsTable.RelY, -bedwars.BowConstantsTable.RelZ))).Position
+											bedwars.ProjectileController:createLocalProjectile(meta, ammo, projectile, shootPosition, id, dir * projSpeed, {drawDurationSeconds = 1})
+											local res = projectileRemote:InvokeServer(item.tool, ammo, projectile, shootPosition, pos, dir * projSpeed, id, {drawDurationSeconds = 1, shotId = httpService:GenerateGUID(false)}, workspace:GetServerTimeNow() - 0.045)
+											if not res then
+												FireDelays[item.itemType] = tick()
+											else
+												local shoot = itemMeta.launchSound
+												shoot = shoot and shoot[math.random(1, #shoot)] or nil
+												if shoot then
+													bedwars.SoundManager:playSound(shoot)
+												end
+											end
+										end)
+	
+										FireDelays[item.itemType] = InstaKill.Enabled and ammo:find('arrow') and 0 or tick() + itemMeta.fireDelaySec
+										if switched then
+											task.wait(0.05)
+										end
+									end
+								end
+							end
+						end
+					end
+					task.wait(0.1)
+				until not ProjectileExploit.Enabled
+			end
+		end,
+		Tooltip = 'Shoots people around you'
+	})
+	Targets = ProjectileExploit:CreateTargets({
+		Players = true,
+		Walls = true
+	})
+	List = ProjectileExploit:CreateTextList({
+		Name = 'Projectiles',
+		Default = {'arrow', 'snowball'}
+	})
+	Range = ProjectileExploit:CreateSlider({
+		Name = 'Range',
+		Min = 1,
+		Max = 500,
+		Default = 50,
+		Suffix = function(val)
+			return val == 1 and 'stud' or 'studs'
+		end
+	})
+
+	InstaKill = ProjectileExploit:CreateToggle({
+		Name = 'InstaKill',
+		Tooltip = 'Manipulates Projectile Cooldown Values'
+	})
+end)
+
+
+
+run(function()
     local AutoLani
     local PlayerDropdown
     local RefreshButton
@@ -22357,1276 +22646,6 @@ run(function()
         if GUICheck and GUICheck.Object then GUICheck.Object.Visible = false end
         if DelayBuySlider and DelayBuySlider.Object then DelayBuySlider.Object.Visible = false end
     end)
-end)
-
-run(function()
-	local KnitInit, Knit
-	repeat
-		KnitInit, Knit = pcall(function()
-			return debug.getupvalue(require(lplr.PlayerScripts.TS.knit).setup, 9)
-		end)
-		if KnitInit then break end
-		task.wait()
-	until KnitInit
-
-	if not debug.getupvalue(Knit.Start, 1) then
-		repeat task.wait() until debug.getupvalue(Knit.Start, 1)
-	end
-
-	local Players = game:GetService("Players")
-
-	shared.PERMISSION_CONTROLLER_HASANYPERMISSIONS_REVERT = shared.PERMISSION_CONTROLLER_HASANYPERMISSIONS_REVERT or Knit.Controllers.PermissionController.hasAnyPermissions
-	shared.MATCH_CONTROLLER_GETPLAYERPARTY_REVERT = shared.MATCH_CONTROLLER_GETPLAYERPARTY_REVERT or Knit.Controllers.MatchController.getPlayerParty
-
-	local AC_MOD_View = {
-		playerConnections = {},
-		Enabled = false,
-		Friends = {}, 
-		parties = {}, 
-		teamMap = {}, 
-		display = {},
-		isRefreshing = false,
-		cacheDirty = true,
-		disable_disguises = false,
-		disguises = {},
-		teamData = {}
-	}
-
-	AC_MOD_View.controller = Knit.Controllers.PermissionController
-	AC_MOD_View.match_controller = Knit.Controllers.MatchController
-
-	function AC_MOD_View:getPartyById(displayId)
-		if not displayId then return end
-		displayId = tostring(displayId)
-		if self.display[displayId] then return self.display[displayId] end
-		for _, party in pairs(self.parties) do
-			if party.displayId == tostring(displayId) then
-				self.display[displayId] = party
-				return party
-			end
-		end
-	end
-
-	function AC_MOD_View:refreshDisplayCache()
-		for _, plr in pairs(Players:GetPlayers()) do
-			local playerId = tostring(plr.UserId)
-
-			local playerPartyId = self.teamMap[playerId]
-			if playerPartyId ~= nil then
-				self:getPartyById(playerPartyId)
-			end
-			task.wait()
-		end
-	end
-
-	function AC_MOD_View:refreshDisplayCacheAsync()
-		task.spawn(self.refreshDisplayCache, self)
-	end
-
-	function AC_MOD_View:getPlayerTeamData(plr)
-		if self.teamData[plr] then return self.teamData[plr] end
-
-		self.teamData[plr] = {}
-
-		local teamMembers = {}
-		local playerTeam = plr.Team 
-		if not playerTeam then
-			return teamMembers 
-		end
-
-		local playerId = tostring(plr.UserId)
-		self.Friends[playerId] = self.Friends[playerId] or {}
-
-		for _, otherPlayer in pairs(Players:GetPlayers()) do
-			if otherPlayer == plr then continue end 
-
-			local otherPlayerId = tostring(otherPlayer.UserId)
-			local areFriends = self.Friends[playerId][otherPlayerId]
-
-			if areFriends == nil then
-				local suc, res = pcall(function()
-					return plr:IsFriendsWith(otherPlayer.UserId)
-				end)
-				areFriends = suc and res or false
-
-				if suc then
-					self.Friends = self.Friends or {}
-					self.Friends[playerId] = self.Friends[playerId] or {}
-					self.Friends[playerId][otherPlayerId] = areFriends
-					self.Friends[otherPlayerId] = self.Friends[otherPlayerId] or {}
-					self.Friends[otherPlayerId][playerId] = areFriends
-				end
-			end
-
-			if areFriends and otherPlayer.Team == playerTeam then
-				table.insert(teamMembers, otherPlayerId)
-			end
-		end
-
-		self.teamData[plr] = teamMembers
-
-		return teamMembers
-	end
-
-	function AC_MOD_View:refreshPlayerTeamData()
-		for i,v in pairs(Players:GetPlayers()) do
-			self:getPlayerTeamData(v)
-			task.wait()
-		end
-	end
-
-	function AC_MOD_View:refreshPlayerTeamDataAsync()
-		task.spawn(self.refreshPlayerTeamData, self)
-	end
-
-	function AC_MOD_View:refreshTeamMap()
-		local allTeams = {}
-		for _, p in pairs(Players:GetPlayers()) do
-			local teamMembers = self:getPlayerTeamData(p)
-			if teamMembers and #teamMembers > 0 then 
-				allTeams[p] = teamMembers
-			end
-		end
-
-		local validTeams = {}
-		for playerInTeams, members in pairs(allTeams) do
-			local playerIdInTeams = tostring(playerInTeams.UserId)
-			local cleanedMembers = {}
-
-			for _, memberId in pairs(members) do
-				local memberIdStr = tostring(memberId)
-				if memberIdStr == playerIdInTeams then
-					--print("Warning: Player " .. playerIdInTeams .. " has themselves in their team list.")
-				else
-					table.insert(cleanedMembers, memberIdStr)
-				end
-			end
-
-			if #cleanedMembers > 0 then
-				validTeams[playerInTeams] = cleanedMembers
-			end
-		end
-
-		self.parties = {}
-		self.teamMap = {}
-		local teamId = 0
-		for playerInTeams, members in pairs(validTeams) do
-			local playerIdInTeams = tostring(playerInTeams.UserId)
-			if not self.teamMap[playerIdInTeams] then
-				self.teamMap[playerIdInTeams] = teamId
-				table.insert(self.parties, {
-					displayId = tostring(teamId),
-					members = members
-				})
-				teamId = teamId + 1
-
-				for _, memberId in pairs(members) do
-					self.teamMap[memberId] = teamId - 1
-				end
-			end
-		end
-
-		self.cacheDirty = false
-		self.isRefreshing = false
-	end
-
-	function AC_MOD_View:refreshTeamMapAsync()
-		if self.isRefreshing then return end 
-		self.isRefreshing = true
-		task.spawn(function()
-			self:refreshTeamMap()
-		end)
-	end
-
-	function AC_MOD_View:getPlayerParty(plr)
-		if not plr or not plr:IsA("Player") then
-			return nil
-		end
-
-		local playerId = tostring(plr.UserId)
-
-		if self.cacheDirty or not next(self.teamMap) then
-			self:refreshTeamMapAsync()
-		end
-
-		local playerPartyId = self.teamMap[playerId]
-		if playerPartyId ~= nil then
-			return self:getPartyById(playerPartyId)
-		end
-
-		return nil 
-	end
-
-	AC_MOD_View.mockGetPlayerParty = function(self, plr)
-		local parties = self.parties 
-		if parties ~= nil and #parties > 0 then
-			return shared.MATCH_CONTROLLER_GETPLAYERPARTY_REVERT(self, plr)
-		end
-		return AC_MOD_View:getPlayerParty(plr)
-	end
-
-	function AC_MOD_View:toggleDisableDisguises()
-		if not self.Enabled then return end
-		if self.disable_disguises then
-			for _,v in pairs(Players:GetPlayers()) do
-				if v == Players.LocalPlayer then continue end
-				local disguiseName = v:GetAttribute("DisguiseDisplayName")
-				if disguiseName and disguiseName ~= "" then
-					self.disguises[v] = disguiseName
-					v:SetAttribute("DisguiseDisplayName", "")
-					notif("Remove Disguises", "Disabled streamer mode for "..tostring(v.Name).."!", 3)
-				end
-			end
-			pcall(function() Knit.Controllers.StreamerModeController:updateNametags(true) end)
-		else
-			for v, originalName in pairs(self.disguises) do
-				if v and v.Parent then
-					v:SetAttribute("DisguiseDisplayName", originalName)
-					notif("Remove Disguises", "Re-enabled Streamer mode for "..tostring(v.Name).."!", 2)
-				end
-			end
-			table.clear(self.disguises)
-			pcall(function() Knit.Controllers.StreamerModeController:updateNametags(true) end)
-		end
-	end
-
-	function AC_MOD_View:refreshCore()
-		self:refreshTeamMapAsync()
-		self:refreshDisplayCacheAsync()
-		self:refreshPlayerTeamDataAsync()
-
-		self:toggleDisableDisguises()
-	end
-
-	function AC_MOD_View:refreshCoreAsync()
-		task.spawn(self.refreshCore, self)
-	end
-
-	function AC_MOD_View:init()
-		self.Enabled = true
-		self.controller.hasAnyPermissions = function(self)
-			return true
-		end
-		self.match_controller.getPlayerParty = self.mockGetPlayerParty
-
-		self.playerConnections = {
-			added = Players.PlayerAdded:Connect(function(player)
-				self.cacheDirty = true
-				self:refreshCoreAsync()
-				player:GetPropertyChangedSignal("Team"):Connect(function()
-					self.cacheDirty = true
-					self:refreshCoreAsync()
-				end)
-			end),
-			removed = Players.PlayerRemoving:Connect(function(player)
-				local playerId = tostring(player.UserId)
-				self.Friends[playerId] = nil 
-				for _, cache in pairs(self.Friends) do
-					cache[playerId] = nil
-				end
-				self.cacheDirty = true
-				self:refreshCoreAsync()
-			end)
-		}
-
-		self:refreshCore()
-	end
-
-	function AC_MOD_View:disable()
-		self.Enabled = false
-
-		self.controller.hasAnyPermissions = shared.PERMISSION_CONTROLLER_HASANYPERMISSIONS_REVERT
-		self.match_controller.getPlayerParty = shared.MATCH_CONTROLLER_GETPLAYERPARTY_REVERT
-
-		if self.playerConnections then
-			for _, v in pairs(self.playerConnections) do
-				pcall(function() v:Disconnect() end)
-			end
-			table.clear(self.playerConnections)
-		end
-
-		self.parties = {}
-		self.teamMap = {}
-		self.Friends = {}
-		self.display = {}
-		self.teamData = {}
-		self.cacheDirty = true
-
-		self:toggleDisableDisguises()
-	end
-
-	shared.ACMODVIEWENABLED = false
-	AC_MOD_View.moduleInstance = vape.Categories.World:CreateModule({
-		Name = "ACMODView",
-		Function = function(call)
-			shared.ACMODVIEWENABLED = call
-			if call then
-				AC_MOD_View:init()
-			else
-				AC_MOD_View:disable()
-			end
-		end
-	})
-
-	AC_MOD_View.disableDisguisesToggle = AC_MOD_View.moduleInstance:CreateToggle({
-		Name = "Remove Disguises",
-		Function = function(call)
-			AC_MOD_View.disable_disguises = call
-			AC_MOD_View:toggleDisableDisguises()
-		end,
-		Default = true
-	})
-end)
-
-run(function()
-    local InvisibleCursor = {}
-    local isActive = false
-    local renderConnection
-    local ViewMode = {Value = 'First Person'}
-    local LimitToItems = {Enabled = false}
-    local ShowOnGUI = {Enabled = false}
-    local lastCursorState = nil
-    
-    local function hasBowEquipped()
-        if not store.hand or not store.hand.tool then
-            return false
-        end
-        
-        local toolName = store.hand.tool.Name:lower()
-        return toolName:find('bow') ~= nil or toolName:find('crossbow') ~= nil
-    end
-    
-    local function shouldHideCursor()
-        if not isActive then return false end
-        
-        if ShowOnGUI.Enabled and isGUIOpen() then
-            return false
-        end
-        
-        if LimitToItems.Enabled and not hasBowEquipped() then
-            return false
-        end
-        
-        local inFirstPerson = isFirstPerson()
-    
-        if ViewMode.Value == 'First Person' then
-            return inFirstPerson
-        elseif ViewMode.Value == 'Third Person' then
-            return not inFirstPerson
-        elseif ViewMode.Value == 'Both' then
-            return true
-        end
-        
-        return false
-    end
-    
-    local function updateCursor()
-        local shouldHide = shouldHideCursor()
-        
-        if lastCursorState == shouldHide then
-            return 
-        end
-        
-        lastCursorState = shouldHide
-        inputService.MouseIconEnabled = not shouldHide
-    end
-    
-    InvisibleCursor = vape.Categories.Utility:CreateModule({
-        Name = 'InvisibleCursor',
-        Function = function(callback)
-            if callback then
-                isActive = true
-                lastCursorState = nil
-                
-                if renderConnection then
-                    renderConnection:Disconnect()
-                end
-                
-                renderConnection = runService.RenderStepped:Connect(updateCursor)
-                
-                InvisibleCursor:Clean(vapeEvents.InventoryChanged.Event:Connect(updateCursor))
-            else
-                isActive = false
-                
-                if renderConnection then
-                    renderConnection:Disconnect()
-                    renderConnection = nil
-                end
-                
-                inputService.MouseIconEnabled = true
-                lastCursorState = nil
-            end
-        end,
-    })
-    
-    ViewMode = InvisibleCursor:CreateDropdown({
-        Name = 'View Mode',
-        List = {'First Person', 'Third Person', 'Both'},
-        Default = 'First Person',
-        Function = function(val)
-            ViewMode.Value = val
-            updateCursor()
-        end
-    })
-    
-    LimitToItems = InvisibleCursor:CreateToggle({
-        Name = 'Limit to Bow',
-        Default = false,
-        Function = function(val)
-            LimitToItems.Enabled = val
-            updateCursor()
-        end
-    })
-    
-    ShowOnGUI = InvisibleCursor:CreateToggle({
-        Name = 'Show on GUI',
-        Default = false,
-        Function = function(val)
-            ShowOnGUI.Enabled = val
-            updateCursor()
-        end
-    })
-end)
-
-run(function()
-    local LegacyAnimation
-    local enabled = false
-    local renderConnection = nil
-    local lastSetValue = nil
-    local CameraMode = { Value = 'Both' }
-
-    local function ensureAttribute()
-        local workspace = game:GetService("Workspace")
-        if workspace:GetAttribute("RbxLegacyAnimationBlending") == nil then
-            workspace:SetAttribute("RbxLegacyAnimationBlending", false)
-        end
-    end
-
-    local function setLegacyAnimation(value)
-        local workspace = game:GetService("Workspace")
-        ensureAttribute()
-        if lastSetValue ~= value then
-            workspace:SetAttribute("RbxLegacyAnimationBlending", value)
-            lastSetValue = value
-        end
-    end
-
-    local function updateLegacyAnimation()
-        if not enabled then
-            setLegacyAnimation(false)
-            return
-        end
-
-        local mode = 'Both'
-        if CameraMode and CameraMode.Value then
-            mode = CameraMode.Value
-        end
-
-        local inFirstPerson = isFirstPerson()
-
-        local shouldEnable = false
-        if mode == "Both" then
-            shouldEnable = true
-        elseif mode == "First Person" then
-            shouldEnable = inFirstPerson
-        elseif mode == "Third Person" then
-            shouldEnable = not inFirstPerson
-        end
-
-        setLegacyAnimation(shouldEnable)
-    end
-
-    LegacyAnimation = vape.Categories.Render:CreateModule({
-        Name = 'LegacyAnimation',
-        Function = function(callback)
-            enabled = callback
-
-            if enabled then
-                if not renderConnection then
-                    renderConnection = game:GetService("RunService").RenderStepped:Connect(updateLegacyAnimation)
-                end
-                updateLegacyAnimation()
-            else
-                if renderConnection then
-                    renderConnection:Disconnect()
-                    renderConnection = nil
-                end
-                setLegacyAnimation(false)
-            end
-        end,
-        Tooltip = 'turns on Roblox legacy animation blending'
-    })
-
-    CameraMode = LegacyAnimation:CreateDropdown({
-        Name = 'Camera Mode',
-        List = {'Both', 'First Person', 'Third Person'},
-        Default = 'Both',
-        Function = function(val)
-            CameraMode.Value = val
-            updateLegacyAnimation() 
-        end
-    })
-end)
-
-run(function()
-	local RemovePlayerLevel
-	
-	local function removePlayerLevels(gui)
-		for _, descendant in gui:GetDescendants() do
-			if descendant:IsA("TextLabel") and descendant.Name == "PlayerLevel" then
-				descendant:Destroy()
-			end
-		end
-	end
-	
-	RemovePlayerLevel = vape.Categories.Render:CreateModule({
-		Name = 'RemovePlayerLevelUI',
-		Function = function(callback)
-			if callback then
-				local existingTabList = lplr.PlayerGui:FindFirstChild("TabListScreenGui")
-				if existingTabList then
-					removePlayerLevels(existingTabList)
-				end
-				
-				RemovePlayerLevel:Clean(lplr.PlayerGui.ChildAdded:Connect(function(gui)
-					if gui.Name == "TabListScreenGui" then
-						removePlayerLevels(gui)
-						
-						RemovePlayerLevel:Clean(gui.DescendantAdded:Connect(function(descendant)
-							if descendant:IsA("TextLabel") and descendant.Name == "PlayerLevel" then
-								descendant:Destroy()
-							end
-						end))
-					end
-				end))
-				
-			end
-		end,
-		Tooltip = 'Removes player levels from the TabList'
-	})
-end)
-
-run(function()
-	local OG4v4v4v4
-	local OldMaterials = {}
-	local OldColors = {}
-	local oldTexture = {}
-	local oldColor = {}
-	local deletedNumTeamMembers = {} 
-	
-	local worldFolder = getWorldFolder()
-	if not worldFolder then return end
-	local blocks = worldFolder:WaitForChild("Blocks")
-	
-	local function isValidWoolBlock(obj)
-		if not obj:IsA("BasePart") then
-			return false
-		end
-		if obj.Name ~= "wool_orange" and obj.Name ~= "wool_pink" then
-			return false
-		end
-		local parent = obj.Parent
-		if parent then
-			if parent.Name == "Viewmodel" or parent.Parent and parent.Parent.Name == "Viewmodel" then
-				return false
-			end
-			
-			if parent:IsA("Accessory") or parent:IsA("Tool") then
-				return false
-			end
-			
-			local ancestor = parent
-			while ancestor do
-				if ancestor:IsA("Model") and playersService:GetPlayerFromCharacter(ancestor) then
-					return false
-				end
-				ancestor = ancestor.Parent
-			end
-		end
-		
-		return true
-	end
-	
-	local function removeNumTeamMembers(gui)
-		if not gui then return end
-		
-		local topBarApp = gui:FindFirstChild("TopBarApp")
-		if not topBarApp then return end
-		
-		local frame5 = topBarApp:FindFirstChild("5")
-		if not frame5 then return end
-		
-		local frame4 = frame5:FindFirstChild("4")
-		if not frame4 then return end
-		
-		for _, frameName in pairs({"2", "3", "4", "5"}) do
-			local targetFrame = frame4:FindFirstChild(frameName)
-			if targetFrame and targetFrame:IsA("Frame") then
-				local numLabel = targetFrame:FindFirstChild("NumTeamMembers")
-				if numLabel and numLabel:IsA("TextLabel") then
-					deletedNumTeamMembers[numLabel] = {
-						Parent = numLabel.Parent,
-						Name = numLabel.Name,
-						Text = numLabel.Text,
-						Position = numLabel.Position,
-						Size = numLabel.Size,
-						Visible = numLabel.Visible
-					}
-					numLabel:Destroy()
-				end
-			end
-		end
-	end
-	
-	local function restoreNumTeamMembers()
-		for label, data in pairs(deletedNumTeamMembers) do
-			if data.Parent and data.Parent.Parent then
-				local newLabel = Instance.new("TextLabel")
-				newLabel.Name = data.Name
-				newLabel.Text = data.Text
-				newLabel.Position = data.Position
-				newLabel.Size = data.Size
-				newLabel.Visible = data.Visible
-				newLabel.Parent = data.Parent
-			end
-		end
-		table.clear(deletedNumTeamMembers)
-	end
-	
-	OG4v4v4v4 = vape.Categories.Render:CreateModule({
-		Name = 'OG4v4v4v4',
-		Function = function(callback)
-			if callback then
-				local OrangeMaterial = Instance.new('MaterialVariant')
-				OrangeMaterial.Parent = cloneref(game:GetService('MaterialService'))
-				OrangeMaterial.Name = 'rbxassetid://16991768606_red'
-				OrangeMaterial.ColorMap = 'rbxassetid://16991768606'
-				OrangeMaterial.StudsPerTile = 3
-				OrangeMaterial.RoughnessMap = 'rbxassetid://16991768606'
-				OrangeMaterial.BaseMaterial = 'Fabric'
-				
-				local PinkMaterial = Instance.new('MaterialVariant')
-				PinkMaterial.Parent = cloneref(game:GetService('MaterialService'))
-				PinkMaterial.Name = 'rbxassetid://16991768606_green'
-				PinkMaterial.ColorMap = 'rbxassetid://16991768606'
-				PinkMaterial.StudsPerTile = 3
-				PinkMaterial.RoughnessMap = 'rbxassetid://16991768606'
-				PinkMaterial.BaseMaterial = 'Fabric'
-				
-				local topBarGui = lplr.PlayerGui:FindFirstChild('TopBarAppGui')
-				if topBarGui then
-					removeNumTeamMembers(topBarGui)
-				end
-				
-				OG4v4v4v4:Clean(lplr.PlayerGui.ChildAdded:Connect(function(gui)
-					if gui.Name == "TopBarAppGui" then
-						removeNumTeamMembers(gui)
-						
-						OG4v4v4v4:Clean(gui.DescendantAdded:Connect(function(descendant)
-							if descendant:IsA("Frame") and 
-							   (descendant.Name == "2" or descendant.Name == "3" or 
-							    descendant.Name == "4" or descendant.Name == "5") then
-								local frame4 = descendant.Parent
-								if frame4 and frame4.Name == "4" then
-									local frame5 = frame4.Parent
-									if frame5 and frame5.Name == "5" then
-										local topBarApp = frame5.Parent
-										if topBarApp and topBarApp.Name == "TopBarApp" then
-											task.wait(0.1) 
-											local numLabel = descendant:FindFirstChild("NumTeamMembers")
-											if numLabel and numLabel:IsA("TextLabel") then
-												deletedNumTeamMembers[numLabel] = {
-													Parent = numLabel.Parent,
-													Name = numLabel.Name,
-													Text = numLabel.Text,
-													Position = numLabel.Position,
-													Size = numLabel.Size,
-													Visible = numLabel.Visible
-												}
-												numLabel:Destroy()
-											end
-										end
-									end
-								end
-							end
-						end))
-					end
-				end))
-				
-				local viewmodel = gameCamera:FindFirstChild("Viewmodel")
-				if viewmodel then
-					OG4v4v4v4:Clean(viewmodel.ChildAdded:Connect(function(obj)
-						if obj.Name == "wool_orange" then
-							task.wait(0.01)
-							if obj:FindFirstChild('Handle') then
-								for i, texture in obj:FindFirstChild('Handle'):GetChildren() do
-									if texture:IsA('Texture') then
-										oldTexture[texture] = texture.Texture
-										oldColor[texture] = texture.Color3
-										texture.Texture = "rbxassetid://16991768606"
-										texture.Color3 = Color3.fromRGB(196, 40, 28)
-									end
-								end
-							end
-						elseif obj.Name == "wool_pink" then
-							task.wait(0.01)
-							if obj:FindFirstChild('Handle') then
-								for i, texture in obj:FindFirstChild('Handle'):GetChildren() do
-									if texture:IsA('Texture') then
-										oldTexture[texture] = texture.Texture
-										oldColor[texture] = texture.Color3
-										texture.Texture = "rbxassetid://16991768606"
-										texture.Color3 = Color3.fromRGB(15, 185, 55)
-									end
-								end
-							end
-						end
-					end))
-				end
-				
-				OG4v4v4v4:Clean(lplr.Character.ChildAdded:Connect(function(obj)
-					if obj.Name == "wool_orange" then
-						task.wait(0.01)
-						if obj:FindFirstChild('Handle') then
-							for i, texture in obj:FindFirstChild('Handle'):GetChildren() do
-								if texture:IsA('Texture') then
-									oldTexture[texture] = texture.Texture
-									oldColor[texture] = texture.Color3
-									texture.Texture = "rbxassetid://16991768606"
-									texture.Color3 = Color3.fromRGB(196, 40, 28)
-								end
-							end
-						end
-					elseif obj.Name == "wool_pink" then
-						task.wait(0.01)
-						if obj:FindFirstChild('Handle') then
-							for i, texture in obj:FindFirstChild('Handle'):GetChildren() do
-								if texture:IsA('Texture') then
-									oldTexture[texture] = texture.Texture
-									oldColor[texture] = texture.Color3
-									texture.Texture = "rbxassetid://16991768606"
-									texture.Color3 = Color3.fromRGB(15, 185, 55)
-								end
-							end
-						end
-					end
-				end))
-				
-				OG4v4v4v4:Clean(blocks.ChildAdded:Connect(function(obj)
-					if obj.Name == "wool_orange" and isValidWoolBlock(obj) then
-						OldMaterials[obj] = obj.MaterialVariant
-						OldColors[obj] = obj.Color
-						obj.MaterialVariant = 'rbxassetid://16991768606_red'
-						obj.Color = Color3.fromRGB(196, 40, 28)
-					elseif obj.Name == "wool_pink" and isValidWoolBlock(obj) then
-						OldMaterials[obj] = obj.MaterialVariant
-						OldColors[obj] = obj.Color
-						obj.MaterialVariant = 'rbxassetid://16991768606_green'
-						obj.Color = Color3.fromRGB(15, 185, 55)
-					end
-				end))
-				
-				OG4v4v4v4:Clean(workspace.ChildAdded:Connect(function(obj)
-					if obj.Name == "wool_orange" and isValidWoolBlock(obj) then
-						OldMaterials[obj] = obj.MaterialVariant
-						OldColors[obj] = obj.Color
-						obj.MaterialVariant = 'rbxassetid://16991768606_red'
-						obj.Color = Color3.fromRGB(196, 40, 28)
-					elseif obj.Name == "wool_pink" and isValidWoolBlock(obj) then
-						OldMaterials[obj] = obj.MaterialVariant
-						OldColors[obj] = obj.Color
-						obj.MaterialVariant = 'rbxassetid://16991768606_green'
-						obj.Color = Color3.fromRGB(15, 185, 55)
-					end
-				end))
-				
-				for _, obj in blocks:GetChildren() do
-					if obj.Name == "wool_orange" and isValidWoolBlock(obj) then
-						OldMaterials[obj] = obj.MaterialVariant
-						OldColors[obj] = obj.Color
-						obj.MaterialVariant = 'rbxassetid://16991768606_red'
-						obj.Color = Color3.fromRGB(196, 40, 28)
-					elseif obj.Name == "wool_pink" and isValidWoolBlock(obj) then
-						OldMaterials[obj] = obj.MaterialVariant
-						OldColors[obj] = obj.Color
-						obj.MaterialVariant = 'rbxassetid://16991768606_green'
-						obj.Color = Color3.fromRGB(15, 185, 55)
-					end
-				end
-				
-				task.spawn(function()
-					while OG4v4v4v4.Enabled do
-						local topBarGui = lplr.PlayerGui:FindFirstChild('TopBarAppGui')
-						if topBarGui then
-							for i, v in topBarGui:GetDescendants() do
-								if v:IsA("Frame") and v.Name == "3" then
-									if v.BackgroundColor3 == Color3.fromRGB(242, 142, 41) then
-										v.BackgroundColor3 = Color3.fromRGB(196, 40, 28)
-										if v.Parent then
-											for _, sibling in v.Parent:GetChildren() do
-												if sibling:IsA("UIStroke") then
-													sibling.Color = Color3.fromRGB(196, 40, 28)
-												end
-											end
-										end
-									elseif v.BackgroundColor3 == Color3.fromRGB(255, 102, 204) or 
-										   v.BackgroundColor3 == Color3.fromRGB(255, 85, 255) or 
-										   v.BackgroundColor3 == Color3.fromRGB(218, 133, 222) then
-										v.BackgroundColor3 = Color3.fromRGB(15, 185, 55)
-										if v.Parent then
-											for _, sibling in v.Parent:GetChildren() do
-												if sibling:IsA("UIStroke") then
-													sibling.Color = Color3.fromRGB(15, 185, 55)
-												end
-											end
-										end
-									end
-								end
-							end
-						end
-						task.wait(0.5)
-					end
-				end)
-				
-				OG4v4v4v4:Clean(lplr.PlayerGui.ChildAdded:Connect(function(obj)
-					if obj.Name == "TabListScreenGui" then
-						for i, v in obj:GetDescendants() do
-							if v:IsA("Frame") and v.Name == "2" then
-								if v.BackgroundColor3 == Color3.fromRGB(242, 142, 41) then
-									v.BackgroundColor3 = Color3.fromRGB(196, 40, 28)
-									if v.Parent then
-										for _, sibling in v.Parent:GetChildren() do
-											if sibling:IsA("UIStroke") then
-												sibling.Color = Color3.fromRGB(196, 40, 28)
-											end
-										end
-									end
-									if v:FindFirstChild("TeamName") then
-										v:FindFirstChild("TeamName").RichText = true
-										v:FindFirstChild("TeamName").Text = "<b>Red Team</b>"
-									end
-								elseif v.BackgroundColor3 == Color3.fromRGB(255, 102, 204) or 
-									   v.BackgroundColor3 == Color3.fromRGB(255, 85, 255) or 
-									   v.BackgroundColor3 == Color3.fromRGB(218, 133, 222) then
-									v.BackgroundColor3 = Color3.fromRGB(15, 185, 55)
-									if v.Parent then
-										for _, sibling in v.Parent:GetChildren() do
-											if sibling:IsA("UIStroke") then
-												sibling.Color = Color3.fromRGB(15, 185, 55)
-											end
-										end
-									end
-									if v:FindFirstChild("TeamName") then
-										v:FindFirstChild("TeamName").RichText = true
-										v:FindFirstChild("TeamName").Text = "<b>Green Team</b>"
-									end
-								end
-							end
-						end
-					end
-				end))
-			else
-				for i, v in lplr.PlayerGui:FindFirstChild('TopBarAppGui'):GetDescendants() do
-					if v:IsA("Frame") and v.Name == "3" then
-						if v.BackgroundColor3 == Color3.fromRGB(196, 40, 28) then
-							v.BackgroundColor3 = Color3.fromRGB(242, 142, 41)
-							if v.Parent then
-								for _, sibling in v.Parent:GetChildren() do
-									if sibling:IsA("UIStroke") then
-										sibling.Color = Color3.fromRGB(242, 142, 41)
-									end
-								end
-							end
-						elseif v.BackgroundColor3 == Color3.fromRGB(15, 185, 55) then
-							v.BackgroundColor3 = Color3.fromRGB(255, 102, 204)
-							if v.Parent then
-								for _, sibling in v.Parent:GetChildren() do
-									if sibling:IsA("UIStroke") then
-										sibling.Color = Color3.fromRGB(255, 102, 204)
-									end
-								end
-							end
-						end
-					end
-				end
-				
-				restoreNumTeamMembers()
-				
-				for texture, oldTex in pairs(oldTexture) do
-					if texture and texture.Parent then
-						texture.Texture = oldTex
-					end
-				end
-				for texture, oldCol in pairs(oldColor) do
-					if texture and texture.Parent then
-						texture.Color3 = oldCol
-					end
-				end
-				
-				for obj, oldMaterial in pairs(OldMaterials) do
-					if obj and obj.Parent then
-						obj.MaterialVariant = oldMaterial
-						if OldColors[obj] then
-							obj.Color = OldColors[obj]
-						end
-					end
-				end
-				
-				table.clear(OldMaterials)
-				table.clear(OldColors)
-				table.clear(oldTexture)
-				table.clear(oldColor)
-			end
-		end,
-		Tooltip = 'koli shit'
-	})
-end)
-
-run(function()
-    local OGNametags
-    local storedNametags = {}
-    local connections = {}
-    local ActiveTags = {}
-    local CLAN_GRAY = "#B9B9B9"
-    local HideOwnNametag
-    local DotSizeSlider
-    local DotPositionSlider
-
-    local LocalPlayer = playersService.LocalPlayer
-
-    local function create(className, props)
-        local obj = Instance.new(className)
-        for k, v in pairs(props) do
-            obj[k] = v
-        end
-        return obj
-    end
-
-    local function getHead(char)
-        return char:FindFirstChild("Head") or char:WaitForChild("Head", 5)
-    end
-
-    local function getClan(plr)
-        if not plr then return "" end
-        return plr:GetAttribute("ClanTag") or plr:GetAttribute("Clan") or ""
-    end
-
-    local function getNameColor(plr)
-        if not plr then return Color3.fromRGB(255, 80, 80) end
-        if LocalPlayer.Team and plr.Team and LocalPlayer.Team == plr.Team then
-            return Color3.fromRGB(90, 255, 90)
-        end
-        return Color3.fromRGB(255, 80, 80)
-    end
-
-    local function getTeamDotColor(plr)
-        if not plr or not plr.Team then return Color3.new(1, 1, 1) end
-        local teamName = string.lower(plr.Team.Name)
-        if teamName:find("pink") then
-            return Color3.fromRGB(90, 255, 90)
-        elseif teamName:find("orange") then
-            return Color3.fromRGB(255, 80, 80)
-        elseif teamName:find("blue") then
-            return Color3.fromRGB(80, 160, 255)
-        elseif teamName:find("yellow") then
-            return Color3.fromRGB(255, 220, 80)
-        end
-        return Color3.new(1, 1, 1)
-    end
-
-    local function removeOtherNameTags(char)
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-            hum.NameDisplayDistance = 0
-        end
-        local head = char:FindFirstChild("Head")
-        if not head then return end
-        for _, child in ipairs(head:GetChildren()) do
-            if child:IsA("BillboardGui") and child.Name ~= "OGNametag" and child.Name ~= "Nametag" then
-                child:Destroy()
-            end
-        end
-    end
-
-    local function updateTag(plr)
-        local data = ActiveTags[plr]
-        if not data then return end
-
-        local nameColor = getNameColor(plr)
-        local dotColor = getTeamDotColor(plr)
-        local clan = getClan(plr)
-
-        data.dot.BackgroundColor3 = dotColor
-        data.stroke.Color = nameColor
-
-        local displayName = plr.DisplayName ~= "" and plr.DisplayName or plr.Name
-
-        if clan ~= "" then
-            data.txt.Text = string.format(
-                '<font color="%s" size="140">[%s]</font>&nbsp;<font color="rgb(%d,%d,%d)" size="130">%s</font>',
-                CLAN_GRAY, clan,
-                nameColor.R * 255, nameColor.G * 255, nameColor.B * 255,
-                displayName
-            )
-        else
-            data.txt.Text = string.format(
-                '<font color="rgb(%d,%d,%d)" size="130">%s</font>',
-                nameColor.R * 255, nameColor.G * 255, nameColor.B * 255,
-                displayName
-            )
-        end
-    end
-
-    local function CreatePlayerTag(plr, isLocal)
-        if not OGNametags or not OGNametags.Enabled then return end
-        if isLocal and HideOwnNametag and HideOwnNametag.Enabled then return end
-        if not isLocal and getAccountTier(plr) >= 4 and getAccountTier(plr) < 99 and getAccountTier(lplr) == 0 then return end
-
-        local char = plr.Character
-        if not char then return end
-        local head = getHead(char)
-        if not head then return end
-
-        removeOtherNameTags(char)
-
-        local originalNametag = head:FindFirstChild("Nametag")
-        if originalNametag then
-            storedNametags[char] = originalNametag:Clone()
-            originalNametag:Destroy()
-        end
-
-        local old = head:FindFirstChild("OGNametag")
-        if old then old:Destroy() end
-
-        local nameColor = getNameColor(plr)
-        local teamDotColor = getTeamDotColor(plr)
-        local clan = getClan(plr)
-
-        local dotPx = DotSizeSlider and DotSizeSlider.Value or 22
-        local dotPos = DotPositionSlider and DotPositionSlider.Value or 0.10
-
-        local billui = create("BillboardGui", {
-            Name = "OGNametag",
-            AlwaysOnTop = false,
-            Parent = head,
-            Size = UDim2.fromScale(5.35, 0.6),
-            StudsOffsetWorldSpace = Vector3.new(0, 1.6, 0),
-            Adornee = head
-        })
-
-        local Main = create("Frame", {
-            Parent = billui,
-            BackgroundTransparency = 1,
-            Size = UDim2.fromScale(1, 1)
-        })
-
-        local Dot = create("Frame", {
-            Parent = Main,
-            BackgroundColor3 = teamDotColor,
-            BackgroundTransparency = 0.1,
-            Position = UDim2.fromScale(0.02, 0.10),
-            Size = UDim2.fromScale(0.17, 0.88),
-            BorderSizePixel = 0
-        })
-
-        create("UIAspectRatioConstraint", {
-            Parent = Dot,
-            AspectRatio = 1,
-            DominantAxis = Enum.DominantAxis.Height
-        })
-
-        create("UICorner", { Parent = Dot, CornerRadius = UDim.new(1, 0) })
-
-        local Bar = create("Frame", {
-            Parent = Main,
-            BackgroundColor3 = Color3.new(0, 0, 0),
-            BackgroundTransparency = 0.65,
-            Position = UDim2.fromScale(0.19, 0.14),
-            Size = UDim2.fromScale(0.82, 0.72),
-            BorderSizePixel = 0
-        })
-
-        create("UICorner", { Parent = Bar, CornerRadius = UDim.new(0, 0) })
-
-        local Stroke = create("UIStroke", {
-            Parent = Bar,
-            Color = nameColor,
-            Thickness = 1.2,
-            Transparency = 0.3
-        })
-
-        local Txt = create("TextLabel", {
-            Parent = Bar,
-            BackgroundTransparency = 1,
-            Size = UDim2.fromScale(0.99, 1.15),
-            Position = UDim2.fromScale(0.5, 0.5),
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Font = Enum.Font.GothamMedium,
-            TextScaled = true,
-            RichText = true,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            TextYAlignment = Enum.TextYAlignment.Center
-        })
-
-        local displayName = plr.DisplayName ~= "" and plr.DisplayName or plr.Name
-
-        if clan ~= "" then
-            Txt.Text = string.format(
-                '<font color="%s" size="140">[%s]</font>&nbsp;<font color="rgb(%d,%d,%d)" size="130">%s</font>',
-                CLAN_GRAY, clan,
-                nameColor.R * 255, nameColor.G * 255, nameColor.B * 255,
-                displayName
-            )
-        else
-            Txt.Text = string.format(
-                '<font color="rgb(%d,%d,%d)" size="130">%s</font>',
-                nameColor.R * 255, nameColor.G * 255, nameColor.B * 255,
-                displayName
-            )
-        end
-
-        ActiveTags[plr] = {
-            bar = Bar,
-            dot = Dot,
-            stroke = Stroke,
-            txt = Txt,
-            head = head,
-            char = char,
-            gui = billui
-        }
-    end
-
-    local function hook(plr)
-        local function onCharAdded()
-            task.wait(0.25)
-            CreatePlayerTag(plr, plr == LocalPlayer)
-        end
-
-        local conn = plr.CharacterAdded:Connect(onCharAdded)
-        table.insert(connections, conn)
-
-        if plr.Character then
-            task.wait(0.25)
-            CreatePlayerTag(plr, plr == LocalPlayer)
-        end
-    end
-
-    local renderConn
-
-    OGNametags = vape.Categories.Render:CreateModule({
-        Name = "OGNametags",
-        Function = function(callback)
-            if callback then
-                for _, plr in ipairs(playersService:GetPlayers()) do
-                    hook(plr)
-                end
-
-                local playerAddedConn = playersService.PlayerAdded:Connect(hook)
-                table.insert(connections, playerAddedConn)
-
-                local playerRemovingConn = playersService.PlayerRemoving:Connect(function(plr)
-                    ActiveTags[plr] = nil
-                end)
-                table.insert(connections, playerRemovingConn)
-
-                renderConn = game:GetService("RunService").RenderStepped:Connect(function()
-                    local myChar = LocalPlayer.Character
-                    if not myChar then return end
-                    local myHead = myChar:FindFirstChild("Head")
-                    if not myHead then return end
-
-                    for plr, data in pairs(ActiveTags) do
-                        if data.head and data.gui then
-                            updateTag(plr)
-                            local dist = (data.head.Position - myHead.Position).Magnitude
-                            data.gui.AlwaysOnTop = dist <= 18
-                        end
-                    end
-                end)
-
-            else
-                if renderConn then
-                    renderConn:Disconnect()
-                    renderConn = nil
-                end
-
-                for _, conn in ipairs(connections) do
-                    if conn then conn:Disconnect() end
-                end
-                table.clear(connections)
-                table.clear(ActiveTags)
-
-                for _, plr in ipairs(playersService:GetPlayers()) do
-                    if plr.Character then
-                        local head = plr.Character:FindFirstChild("Head")
-                        if head then
-                            local og = head:FindFirstChild("OGNametag")
-                            if og then og:Destroy() end
-                            if storedNametags[plr.Character] then
-                                storedNametags[plr.Character]:Clone().Parent = head
-                                storedNametags[plr.Character] = nil
-                            end
-                        end
-                    end
-                end
-
-                table.clear(storedNametags)
-            end
-        end,
-        Tooltip = "oG BedWars nametags with koli's UI"
-    })
-
-    HideOwnNametag = OGNametags:CreateToggle({
-        Name = "Hide Self Nametag",
-        Default = true,
-        Function = function(callback)
-            if OGNametags.Enabled then
-                if callback then
-                    local head = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
-                    if head then
-                        local og = head:FindFirstChild("OGNametag")
-                        if og then og:Destroy() end
-                    end
-                else
-                    CreatePlayerTag(LocalPlayer, true)
-                end
-            end
-        end
-    })
-
-    DotSizeSlider = OGNametags:CreateSlider({
-        Name = "Dot Size",
-        Min = 4,
-        Max = 60,
-        Default = 22,
-        Decimal = 1,
-        Suffix = "px",
-        Tooltip = "adjust the size of the colored team dot",
-        Function = function(val)
-            for _, tagData in pairs(ActiveTags) do
-                if tagData and tagData.dot then
-                    tagData.dot.Size = UDim2.fromOffset(val, val)
-                end
-            end
-        end
-    })
-
-    DotPositionSlider = OGNametags:CreateSlider({
-        Name = "Dot Position",
-        Min = 0.01,
-        Max = 0.30,
-        Default = 0.10,
-        Decimal = 100,
-        Tooltip = "move the dot up or down",
-        Function = function(val)
-            for _, tagData in pairs(ActiveTags) do
-                if tagData and tagData.dot then
-                    tagData.dot.Position = UDim2.fromScale(0.02, val)
-                end
-            end
-        end
-    })
 end)
 
 run(function()
