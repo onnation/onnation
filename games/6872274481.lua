@@ -2451,267 +2451,6 @@ run(function()
         end)
     end
 end)  
-
-run(function()
-    local KitRender
-    local Players = playersService
-    local player = Players.LocalPlayer
-    local PlayerGui = player:WaitForChild("PlayerGui")
-
-    local activeLoops = {}
-    local updateDebounce = {}
-    local retryThread = nil
-
-    local function createkitrender(plr)
-        local icon = Instance.new("ImageLabel")
-        icon.Name = "SkidV4KitRender" 
-        icon.AnchorPoint = Vector2.new(1, 0.5)
-        icon.BackgroundTransparency = 1
-        icon.Position = UDim2.new(1.05, 0, 0.5, 0)
-        icon.Size = UDim2.new(1.5, 0, 1.5, 0)
-        icon.SizeConstraint = Enum.SizeConstraint.RelativeYY
-        icon.ImageTransparency = 0.4
-        icon.ScaleType = Enum.ScaleType.Crop
-        local uar = Instance.new("UIAspectRatioConstraint")
-        uar.AspectRatio = 1
-        uar.AspectType = Enum.AspectType.FitWithinMaxSize
-        uar.DominantAxis = Enum.DominantAxis.Width
-        uar.Parent = icon
-		local kit = plr:GetAttribute("PlayingAsKits")
-		local meta = bedwars.BedwarsKitMeta and (bedwars.BedwarsKitMeta[kit] or bedwars.BedwarsKitMeta.none)
-        local newImage = (meta and meta.renderImage) or kitImageIds[kit] or kitImageIds["none"]
-		icon.Image = newImage
-        return icon
-    end
-
-    local function removeallkitrenders()
-        for key, _ in pairs(activeLoops) do
-            activeLoops[key] = nil
-        end
-        table.clear(updateDebounce)
-        
-        if retryThread then
-            task.cancel(retryThread)
-            retryThread = nil
-        end
-        
-        for _, v in ipairs(PlayerGui:GetDescendants()) do
-            if v:IsA("ImageLabel") and v.Name == "SkidV4KitRender" then  
-                v:Destroy()
-            end
-        end
-    end
-
-    local function refreshicon(icon, plr)
-        if not icon or not icon.Parent then return end
-        local kit = plr:GetAttribute("PlayingAsKits")
-        local meta = bedwars.BedwarsKitMeta and (bedwars.BedwarsKitMeta[kit] or bedwars.BedwarsKitMeta.none)
-        local newImage = (meta and meta.renderImage) or kitImageIds[kit] or kitImageIds["none"]
-        if icon.Image ~= newImage then
-            icon.Image = newImage
-        end
-    end
-
-    local function findPlayer(label, container)
-        local render = container:FindFirstChild("PlayerRender", true)
-        if render and render:IsA("ImageLabel") and render.Image then
-            local userId = string.match(render.Image, "id=(%d+)")
-            if userId then
-                local plr = Players:GetPlayerByUserId(tonumber(userId))
-                if plr then return plr end
-            end
-        end
-        local text = label.Text
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr.Name == text or plr.DisplayName == text or plr:GetAttribute("DisguiseDisplayName") == text then
-                return plr
-            end
-            local smName = nil
-            pcall(function()
-                smName = bedwars.KnitClient.Controllers.StreamerModeController:getDisplayName(plr)
-            end)
-            if smName and smName == text then
-                return plr
-            end
-        end
-    end
-
-    local function handleLabel(label)
-        if not (label:IsA("TextLabel") and label.Name == "PlayerName") then return end
-        task.spawn(function()
-            local container = label.Parent
-            for _ = 1, 3 do
-                if container and container.Parent then
-                    container = container.Parent
-                end
-            end
-            if not container or not container:IsA("Frame") then return end
-            
-            local playerFound = findPlayer(label, container)
-            if not playerFound then
-                task.wait(0.5)
-                playerFound = findPlayer(label, container)
-            end
-            if not playerFound then return end
-            if not playerFound:GetAttribute("PlayingAsKits") then
-                task.wait(1)
-                if not playerFound:GetAttribute("PlayingAsKits") then return end
-            end
-            local myTeam = lplr:GetAttribute('Team')
-            local theirTeam = playerFound:GetAttribute('Team')
-            if not myTeam or not theirTeam or myTeam == theirTeam then return end
-            
-            container.Name = playerFound.Name
-            local card = container:FindFirstChild("1") and container["1"]:FindFirstChild("MatchDraftPlayerCard")
-            if not card then return end
-            
-            local icon = card:FindFirstChild("SkidV4KitRender")  
-            if not icon then
-                icon = createkitrender(playerFound)
-                icon.Parent = card
-            end
-            
-            local loopKey = playerFound.UserId
-            if activeLoops[loopKey] then
-                activeLoops[loopKey] = nil
-            end
-            activeLoops[loopKey] = true
-			task.spawn(function()
-				while activeLoops[loopKey] and KitRender.Enabled do
-					if not container or not container.Parent then
-						break
-					end
-					if playerFound and icon and icon.Parent then
-						refreshicon(icon, playerFound)
-					end
-					task.wait(0.3)
-				end
-				activeLoops[loopKey] = nil
-				updateDebounce[loopKey] = nil
-			end)
-        end)
-    end
-
-    local activeConnections = {}
-    local kitLabels = {}
-    local squadUpdateDebounce = {}
-    local processedPlayers = {}
-
-    local function createKitLabel(parent, kitImage)
-        if kitLabels[parent] then kitLabels[parent]:Destroy() end
-        local kitLabel = Instance.new("ImageLabel")
-        kitLabel.Name = "SkidV4KitIcon"
-        kitLabel.Size = UDim2.new(1, 0, 1, 0)
-        kitLabel.Position = UDim2.new(1.1, 0, 0, 0)
-        kitLabel.BackgroundTransparency = 1
-        kitLabel.Image = kitImage
-        kitLabel.Parent = parent
-        kitLabels[parent] = kitLabel
-        return kitLabel
-    end
-
-    local function setupSquadsKitRender(obj)
-        if obj.Name == "PlayerRender" and obj.Parent and obj.Parent.Parent and obj.Parent.Parent.Parent and obj.Parent.Parent.Parent.Parent and obj.Parent.Parent.Parent.Parent.Parent and obj.Parent.Parent.Parent.Parent.Parent.Name == "MatchDraftTeamCardRow" then
-            local Rank = obj.Parent:FindFirstChild('3')
-            if not Rank then return end
-            local userId = string.match(obj.Image, "id=(%d+)")
-            if not userId then return end
-            local plr = playersService:GetPlayerByUserId(tonumber(userId))
-            if not plr then return end
-            local myTeam = lplr:GetAttribute('Team')
-            local theirTeam = plr:GetAttribute('Team')
-            if not myTeam or not theirTeam or myTeam == theirTeam then return end
-            local loopKey = plr.UserId
-            processedPlayers[loopKey] = true
-            if activeConnections[loopKey] then activeConnections[loopKey]:Disconnect() activeConnections[loopKey] = nil end
-            local function updateKit()
-                if not KitRender.Enabled then return end
-                if not Rank or not Rank.Parent then
-                    if activeConnections[loopKey] then activeConnections[loopKey]:Disconnect() activeConnections[loopKey] = nil end
-                    if kitLabels[Rank] then kitLabels[Rank]:Destroy() kitLabels[Rank] = nil end
-                    return
-                end
-                local kitName = plr:GetAttribute("PlayingAsKits") or "none"
-                local render = bedwars.BedwarsKitMeta[kitName] or bedwars.BedwarsKitMeta.none
-                if kitLabels[Rank] then kitLabels[Rank].Image = render.renderImage
-                else createKitLabel(Rank, render.renderImage) end
-            end
-            updateKit()
-            local connection = plr:GetAttributeChangedSignal("PlayingAsKits"):Connect(function()
-                local t = tick()
-                if not squadUpdateDebounce[loopKey] or (t - squadUpdateDebounce[loopKey]) >= 0.1 then
-                    squadUpdateDebounce[loopKey] = t
-                    updateKit()
-                end
-            end)
-            activeConnections[loopKey] = connection
-            KitRender:Clean(connection)
-        end
-    end
-
-    local function setupSquadsRender()
-        local teams = lplr.PlayerGui:FindFirstChild("MatchDraftApp")
-        if not teams then return false end
-        task.wait(0.5)
-        for _, obj in teams:GetDescendants() do
-            if KitRender.Enabled then task.spawn(function() setupSquadsKitRender(obj) end) end
-        end
-        KitRender:Clean(teams.DescendantAdded:Connect(function(obj)
-            if KitRender.Enabled then task.wait(0.1) setupSquadsKitRender(obj) end
-        end))
-        return true
-    end
-
-    local function removeSquadsRender()
-        for key, connection in pairs(activeConnections) do
-            if connection then connection:Disconnect() end
-            activeConnections[key] = nil
-        end
-        for parent, label in pairs(kitLabels) do
-            if label then label:Destroy() end
-            kitLabels[parent] = nil
-        end
-        table.clear(squadUpdateDebounce)
-        table.clear(processedPlayers)
-    end
-
-    local function setupKitRender()
-        local draftApp = PlayerGui:FindFirstChild("MatchDraftApp")
-        if not draftApp then return false end
-
-        for _, child in ipairs(draftApp:GetDescendants()) do
-            if KitRender.Enabled then handleLabel(child) end
-        end
-
-        KitRender:Clean(draftApp.DescendantAdded:Connect(function(child)
-            if KitRender.Enabled then handleLabel(child) end
-        end))
-
-        KitRender:Clean(draftApp.AncestryChanged:Connect(function()
-            if not draftApp.Parent then
-                removeallkitrenders()
-            end
-        end))
-
-        return true
-    end
-
-    KitRender = vape.Categories.Utility:CreateModule({
-        Name = "KitRender",
-        Tooltip = "renders everyone kit during banning(for 5v5 or Squads)",
-        Function = function(callback)
-            if callback then
-                local draftApp = lplr.PlayerGui:FindFirstChild("MatchDraftApp")
-                local isSquads = draftApp and draftApp:FindFirstChild("MatchDraftTeamCardRow", true) ~= nil
-                local setupFn = isSquads and setupSquadsRender or setupKitRender
-				setupFn()
-            else
-                removeallkitrenders()
-                removeSquadsRender()
-            end
-        end
-    })
-end)
 	
 run(function()
 	local Attack
@@ -6477,7 +6216,7 @@ run(function()
 						Range = 125,
 						Part = "RootPart",
 						Players = true,
-						Sort = sortmethods[targetSelectionMode.Value],
+						Sort = sortmethods[Sorts.Value],
 						Wallcheck = Legit.Enabled
 					})
 
@@ -6516,7 +6255,7 @@ run(function()
 						Range = 14,
 						Part = "RootPart",
 						Players = true,
-						Sort = sortmethods[targetSelectionMode.Value],
+						Sort = sortmethods[Sorts.Value],
 						Wallcheck = Legit.Enabled
 					})
 
@@ -6691,7 +6430,7 @@ run(function()
 						Players = Targets.Players.Enabled,
 						NPCs = Targets.NPCs.Enabled,
 						Wallcheck = Targets.Walls.Enabled,
-						Sort = sortmethods[targetSelectionMode.Value]
+						Sort = sortmethods[Sorts.Value]
 					})
 
 					if not plr or not store.hand.tool then
@@ -6713,7 +6452,7 @@ run(function()
 							Players = Targets.Players.Enabled,
 							NPCs = Targets.NPCs.Enabled,
 							Wallcheck = Targets.Walls.Enabled,
-							Sort = sortmethods[targetSelectionMode.Value]
+							Sort = sortmethods[Sorts.Value]
 						})
 						if plr2 then
 							local targetPos2 = plr2.RootPart.Position
@@ -6738,7 +6477,7 @@ run(function()
 							Players = Targets.Players.Enabled,
 							NPCs = Targets.NPCs.Enabled,
 							Wallcheck = Targets.Walls.Enabled,
-							Sort = sortmethods[targetSelectionMode.Value]
+							Sort = sortmethods[Sorts.Value]
 						})
 						if plr3 then
 							local targetPos3 = plr3.RootPart.Position
@@ -6815,7 +6554,7 @@ run(function()
 					Players = Targets.Players.Enabled,
 					NPCs = Targets.NPCs.Enabled,
 					Wallcheck = Targets.Walls.Enabled,
-					Sort = sortmethods[targetSelectionMode.Value]
+					Sort = sortmethods[Sorts.Value]
 				})
 				if plr or not Legit.Enabled then
 					bedwars.AbilityController:useAbility('midnight')
@@ -7176,7 +6915,7 @@ run(function()
 								Players = Targets.Players.Enabled,
 								NPCs = Targets.NPCs.Enabled,
 								Wallcheck = Targets.Walls.Enabled,
-								Sort = sortmethods[targetSelectionMode.Value]
+								Sort = sortmethods[Sorts.Value]
 							})
 							if plr then shouldAscend = true end
 						end
@@ -7221,7 +6960,7 @@ run(function()
 							Players = Targets.Players.Enabled,
 							NPCs = Targets.NPCs.Enabled,
 							Wallcheck = Targets.Walls.Enabled,
-							Sort = sortmethods[targetSelectionMode.Value]
+							Sort = sortmethods[Sorts.Value]
 						})
 
 						if target and target.RootPart then
@@ -7266,7 +7005,7 @@ run(function()
 							Players = Targets.Players.Enabled,
 							NPCs = Targets.NPCs.Enabled,
 							Wallcheck = Targets.Walls.Enabled,
-							Sort = sortmethods[targetSelectionMode.Value]
+							Sort = sortmethods[Sorts.Value]
 						})
 
 						if plr then
@@ -7295,11 +7034,13 @@ run(function()
 							Players = Targets.Players.Enabled,
 							NPCs = Targets.NPCs.Enabled,
 							Wallcheck = Targets.Walls.Enabled,
-							Sort = sortmethods[targetSelectionMode.Value]
+							Sort = sortmethods[Sorts.Value]
 						})
 
 						if plr then
-							bedwars.AbilityController:useAbility('CARD_THROW')
+							local useAbilityRemote = replicatedStorage:WaitForChild("events-@easy-games/game-core:shared/game-core-networking@getEvents.Events"):WaitForChild("useAbility")
+							local args = { "CARD_THROW" }
+							useAbilityRemote:FireServer(unpack(args))
 							task.wait(0.1)
 							pcall(function()
 								bedwars.Client:Get(remotes.AttemptCardThrow).instance:FireServer({targetEntityInstance = plr.Character})
@@ -7385,7 +7126,7 @@ run(function()
 						Players = Targets.Players.Enabled,
 						NPCs = Targets.NPCs.Enabled,
 						Wallcheck = Targets.Walls.Enabled,
-						Sort = sortmethods[targetSelectionMode.Value]
+						Sort = sortmethods[Sorts.Value]
 					})
 
 					if plr and Legit.Enabled and (entitylib.character.RootPart.Position - plr.RootPart.Position).Magnitude > 23 then
@@ -7718,7 +7459,7 @@ run(function()
 						Players = Targets.Players.Enabled,
 						NPCs = Targets.NPCs.Enabled,
 						Wallcheck = Targets.Walls.Enabled,
-						Sort = sortmethods[targetSelectionMode.Value]
+						Sort = sortmethods[Sorts.Value]
 					})
 
 					local grit = lplr:GetAttribute('Grit') or 0
@@ -7745,7 +7486,7 @@ run(function()
 						Players = Targets.Players.Enabled,
 						NPCs = Targets.NPCs.Enabled,
 						Wallcheck = Targets.Walls.Enabled,
-						Sort = sortmethods[targetSelectionMode.Value]
+						Sort = sortmethods[Sorts.Value]
 					})
 					if plr and plr.RootPart then
 						local dir = (plr.RootPart.Position - entitylib.character.RootPart.Position).Unit
@@ -10737,11 +10478,31 @@ end)
 run(function()
     HitFix = vape.Categories.Legit:CreateModule({
         Name = 'HitFix',
-		Function = function(callback)
-			debug.setconstant(bedwars.SwordController.swingSwordAtMouse, 23, callback and 'raycast' or 'Raycast')
-			debug.setupvalue(bedwars.SwordController.swingSwordAtMouse, 4, callback and bedwars.QueryUtil or workspace)
-		end,
-	})
+        Function = function(callback)
+            local func = bedwars.SwordController.swingSwordAtMouse
+            if not func then return end
+            local foundIndex = nil
+            pcall(function()
+                for i = 1, 50 do
+                    local constant = debug.getconstant(func, i)
+                    if constant == 'Raycast' or constant == 'raycast' then
+                        foundIndex = i
+                        break
+                    end
+                end
+            end)
+            
+            if foundIndex then
+                pcall(function()
+                    debug.setconstant(func, foundIndex, callback and 'raycast' or 'Raycast')
+                end)
+            end
+            
+            pcall(function()
+                debug.setupvalue(func, 4, callback and bedwars.QueryUtil or workspace)
+            end)
+        end,
+    })
 end)
 
 run(function()
@@ -11760,6 +11521,7 @@ run(function()
         icon.SizeConstraint = Enum.SizeConstraint.RelativeYY
         icon.ImageTransparency = 0.4
         icon.ScaleType = Enum.ScaleType.Crop
+        icon.ZIndex = 5
         local uar = Instance.new("UIAspectRatioConstraint")
         uar.AspectRatio = 1
         uar.AspectType = Enum.AspectType.FitWithinMaxSize
@@ -11782,6 +11544,7 @@ run(function()
         levelLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
         levelLabel.TextXAlignment = Enum.TextXAlignment.Right
         levelLabel.TextYAlignment = Enum.TextYAlignment.Bottom
+        levelLabel.ZIndex = 6
         local level = plr:GetAttribute("PlayerLevel") or 0
         levelLabel.Text = "[" .. tostring(level) .. "]"
         levelLabel.Parent = icon
@@ -11889,16 +11652,30 @@ run(function()
                 activeLoops[loopKey] = nil
             end
             activeLoops[loopKey] = data
+            refreshicon(data, playerFound)
+
+            local kitConn = playerFound:GetAttributeChangedSignal("PlayingAsKits"):Connect(function()
+                if playerFound and data.icon and data.icon.Parent then
+                    refreshicon(data, playerFound)
+                end
+            end)
+            local levelConn = playerFound:GetAttributeChangedSignal("PlayerLevel"):Connect(function()
+                if playerFound and data.icon and data.icon.Parent then
+                    refreshicon(data, playerFound)
+                end
+            end)
+            KitRender:Clean(kitConn)
+            KitRender:Clean(levelConn)
+
             task.spawn(function()
                 while activeLoops[loopKey] and KitRender.Enabled do
                     if not container or not container.Parent then
                         break
                     end
-                    if playerFound and data.icon and data.icon.Parent then
-                        refreshicon(data, playerFound)
-                    end
-                    task.wait(0.3)
+                    task.wait(0.5)
                 end
+                kitConn:Disconnect()
+                levelConn:Disconnect()
                 activeLoops[loopKey] = nil
                 updateDebounce[loopKey] = nil
             end)
@@ -13334,6 +13111,7 @@ run(function()
     local AutoFly
     local LimitToItem
     local RefreshButton
+    
     local running = false
     local healRunning = false
     local flyRunning = false
@@ -13341,63 +13119,190 @@ run(function()
     local currentMountedPlayer = nil
     local fallCheckTimer = 0
     local hasActivatedFly = false
+    local lastHealTime = 0
+    local HEAL_COOLDOWN = 8.5
+    local FLY_COOLDOWN = 85
+    local FLY_ACTIVATION_DELAY = 0.5
+    local fallCheckCounter = 0
+    local mountAttempts = 0
+    local MAX_MOUNT_ATTEMPTS = 3
+    
+    local cachedTeammates = {}
+    local lastTeammateUpdate = 0
+    local TEAMMATE_UPDATE_INTERVAL = 2
+    
+    local voidRayParams = RaycastParams.new()
+    voidRayParams.FilterType = Enum.RaycastFilterType.Blacklist
+    voidRayParams.RespectCanCollide = true
     
     local function isHoldingOwlOrb()
-        if not entitylib.isAlive then return false end
-        
-        local inventory = store.inventory
-        if inventory and inventory.inventory and inventory.inventory.hand then
-            local handItem = inventory.inventory.hand
-            if handItem and handItem.itemType == "owl_orb" then
-                return true
-            end
-        end
+        if not entitylib or not entitylib.isAlive then return false end
+        local inventory = store and store.inventory
+        if not inventory or not inventory.inventory or not inventory.inventory.hand then return false end
+        local handItem = inventory.inventory.hand
+        if handItem and handItem.itemType == "owl_orb" then return true end
         return false
     end
     
+    local function isValidPlayer(player)
+        if not player then return false end
+        if type(player) ~= "userdata" then return false end
+        local success, result = pcall(function()
+            return player.Parent ~= nil and player.Name ~= ""
+        end)
+        return success and result
+    end
+    
+    local function getPlayerHealth(player)
+        if not isValidPlayer(player) then return 0, 100 end
+        if not player.Character then return 0, 100 end
+        local health = player.Character:GetAttribute('Health') or 0
+        local maxHealth = player.Character:GetAttribute('MaxHealth') or 100
+        if health == 0 then
+            local humanoid = player.Character:FindFirstChildOfClass('Humanoid')
+            if humanoid then
+                health = humanoid.Health or 0
+                maxHealth = humanoid.MaxHealth or 100
+            end
+        end
+        return health, maxHealth
+    end
+    
+    local function getPlayerHealthPercent(player)
+        local health, maxHealth = getPlayerHealth(player)
+        if maxHealth == 0 then return 0 end
+        return (health / maxHealth) * 100
+    end
+    
+    local function isPlayerAlive(player)
+        if not isValidPlayer(player) then return false end
+        if not player.Character then return false end
+        local humanoid = player.Character:FindFirstChildOfClass('Humanoid')
+        if humanoid then return humanoid.Health > 0 end
+        local health = player.Character:GetAttribute('Health') or 0
+        return health > 0
+    end
+    
+    local function getPlayerRootPart(player)
+        if not isValidPlayer(player) then return nil end
+        if not player.Character then return nil end
+        local rootPart = player.Character:FindFirstChild('HumanoidRootPart')
+        if not rootPart then rootPart = player.Character:FindFirstChild('RootPart') end
+        if not rootPart then rootPart = player.Character.PrimaryPart end
+        return rootPart
+    end
+    
     local function getMountedPlayer()
+        if not lplr then return nil end
         local owlTarget = lplr:GetAttribute('OwlTarget')
         if owlTarget then
-            return playersService:GetPlayerByUserId(owlTarget)
+            local success, player = pcall(function()
+                return playersService:GetPlayerByUserId(owlTarget)
+            end)
+            return success and player or nil
         end
         return nil
     end
     
+    local function isFalling(player)
+        if not isValidPlayer(player) then return false end
+        local rootPart = getPlayerRootPart(player)
+        if not rootPart then return false end
+        local velocity = rootPart.AssemblyLinearVelocity
+        return velocity and velocity.Y < -20 or false
+    end
+    
+    local function isAboveVoid(player)
+        if not isValidPlayer(player) then return false end
+        local rootPart = getPlayerRootPart(player)
+        if not rootPart then return false end
+        local rayOrigin = rootPart.Position
+        local rayDirection = Vector3.new(0, -1000, 0)
+        voidRayParams.FilterDescendantsInstances = {player.Character, gameCamera}
+        local success, rayResult = pcall(function()
+            return workspace:Raycast(rayOrigin, rayDirection, voidRayParams)
+        end)
+        if not success then return true end
+        if not rayResult then return true end
+        local map = workspace:FindFirstChild("Map")
+        if map then
+            local mapBottom = map.Position.Y - (map.Size and map.Size.Y / 2 or 500)
+            return rayResult.Position.Y < mapBottom - 10
+        end
+        return rayResult.Distance > 200
+    end
+    
+    local function getTeammates()
+        local currentTime = tick()
+        if currentTime - lastTeammateUpdate < TEAMMATE_UPDATE_INTERVAL then
+            return cachedTeammates
+        end
+        local teammates = {}
+        local myTeam = lplr:GetAttribute('Team')
+        if not myTeam then
+            cachedTeammates = {}
+            lastTeammateUpdate = currentTime
+            return teammates
+        end
+        for _, player in playersService:GetPlayers() do
+            if player ~= lplr and isPlayerAlive(player) then
+                local theirTeam = player:GetAttribute('Team')
+                if theirTeam == myTeam then
+                    table.insert(teammates, player)
+                end
+            end
+        end
+        cachedTeammates = teammates
+        lastTeammateUpdate = currentTime
+        return teammates
+    end
+    
+    local function getTeammateListForDropdown()
+        local teammates = getTeammates()
+        local list = {"None"}
+        for _, player in ipairs(teammates) do
+            table.insert(list, player.Name)
+        end
+        return list
+    end
+    
     local function mountBirdToPlayer(targetPlayer)
-        if not targetPlayer or not targetPlayer.Character then return false end
+        if not isValidPlayer(targetPlayer) then return false end
+        if LimitToItem and LimitToItem.Enabled and not isHoldingOwlOrb() then return false end
         
-        if LimitToItem.Enabled and not isHoldingOwlOrb() then
-            return false
+        if currentMountedPlayer == targetPlayer then return true end
+        
+        if currentMountedPlayer then
+            pcall(function()
+                bedwars.Client:Get(remotes.UseAbility).instance:FireServer("DEACTIVE_OWL")
+                task.wait(0.05)
+                bedwars.Client:Get(remotes.RemoveOwl).instance:FireServer()
+            end)
+            currentMountedPlayer = nil
+            task.wait(0.3)
         end
         
         local success = false
         pcall(function()
             local result = bedwars.Client:Get(remotes.SummonOwl).instance:InvokeServer(targetPlayer)
-            
             if result then
-            task.wait(0.05)
-            
-            pcall(function()
-    			bedwars.Client:Get(remotes.UseAbility).instance:FireServer("SUMMON_OWL")
-			end)
-                
+                task.wait(0.05)
+                pcall(function()
+                    bedwars.Client:Get(remotes.UseAbility).instance:FireServer("SUMMON_OWL")
+                end)
                 currentMountedPlayer = targetPlayer
                 success = true
             end
         end)
-        
         return success
     end
     
     local function demountOwl()
         pcall(function()
             bedwars.Client:Get(remotes.UseAbility).instance:FireServer("DEACTIVE_OWL")
-            
             task.wait(0.05)
-            
             bedwars.Client:Get(remotes.RemoveOwl).instance:FireServer()
         end)
-        
         currentMountedPlayer = nil
     end
     
@@ -13407,45 +13312,12 @@ run(function()
         end)
     end
     
-    local function isFalling(player)
-        if not player or not player.Character or not player.Character.PrimaryPart then
-            return false
-        end
-        
-        local velocity = player.Character.PrimaryPart.AssemblyLinearVelocity.Y
-        return velocity < -20
-    end
-    
-	local voidRayParams = RaycastParams.new()
-	voidRayParams.FilterType = Enum.RaycastFilterType.Blacklist
-	voidRayParams.RespectCanCollide = true
-
-	local function isAboveVoid(player)
-		if not player or not player.Character or not player.Character.PrimaryPart then
-			return false
-		end
-		
-		local rayOrigin = player.Character.PrimaryPart.Position
-		local rayDirection = Vector3.new(0, -1000, 0)
-		
-		voidRayParams.FilterDescendantsInstances = {player.Character, gameCamera}
-		
-		local rayResult = workspace:Raycast(rayOrigin, rayDirection, voidRayParams)
-		
-		if not rayResult then
-			return true
-		end
-		
-		return rayResult.Distance > 200
-	end
-    
     local function activateFly()
         pcall(function()
             replicatedStorage:WaitForChild("events-@easy-games/game-core:shared/game-core-networking@getEvents.Events"):WaitForChild("useAbility"):FireServer("OWL_LIFT")
-            
             hasActivatedFly = true
             task.spawn(function()
-                task.wait(85)
+                task.wait(FLY_COOLDOWN)
                 hasActivatedFly = false
             end)
         end)
@@ -13459,6 +13331,14 @@ run(function()
             flyRunning = callback
             
             if callback then
+                local targetName = PlayerDropdown and PlayerDropdown.Value or nil
+                if targetName and targetName ~= "None" then
+                    local targetPlayer = playersService:FindFirstChild(targetName)
+                    if targetPlayer and isPlayerAlive(targetPlayer) then
+                        currentTarget = targetPlayer
+                    end
+                end
+                
                 task.spawn(function()
                     while running do
                         if LimitToItem.Enabled and not isHoldingOwlOrb() then
@@ -13466,30 +13346,35 @@ run(function()
                             continue
                         end
                         
-                        local targetPlayer = playersService:FindFirstChild(PlayerDropdown.Value)
-                        if targetPlayer then
+                        local targetPlayer = nil
+                        if PlayerDropdown and PlayerDropdown.Value and PlayerDropdown.Value ~= "None" then
+                            targetPlayer = playersService:FindFirstChild(PlayerDropdown.Value)
+                        end
+                        
+                        if targetPlayer and isPlayerAlive(targetPlayer) then
                             currentTarget = targetPlayer
-                            
                             local mountedTo = getMountedPlayer()
                             
                             if mountedTo ~= targetPlayer then
-                                if mountedTo and mountedTo ~= targetPlayer then
+                                if mountedTo then
                                     demountOwl()
                                     task.wait(0.3)
                                 end
                                 
-                                if not mountedTo or mountedTo ~= targetPlayer then
-                                    local success = mountBirdToPlayer(targetPlayer)
-                                    if not success then
-                                        task.wait(0.5)
-                                    else
-                                        task.wait(1)
-                                    end
+                                local success = mountBirdToPlayer(targetPlayer)
+                                if not success then
+                                    task.wait(0.5)
+                                else
+                                    task.wait(1)
                                 end
                             else
                                 task.wait(0.5)
                             end
                         else
+                            if currentMountedPlayer then
+                                demountOwl()
+                            end
+                            currentTarget = nil
                             task.wait(0.5)
                         end
                     end
@@ -13498,17 +13383,17 @@ run(function()
                 if AutoHeal.Enabled then
                     task.spawn(function()
                         while healRunning and AutoHeal.Enabled do
-                            if currentTarget then
-                                local health, maxHealth = getPlayerHealth(currentTarget)
-                                if health and maxHealth and maxHealth > 0 then
-                                    local healthPercent = (health / maxHealth) * 100
-                                    if healthPercent < AutoHealSlider.Value and healthPercent < 90 then
+                            if currentTarget and isPlayerAlive(currentTarget) then
+                                local healthPercent = getPlayerHealthPercent(currentTarget)
+                                if healthPercent < AutoHealSlider.Value and healthPercent < 90 then
+                                    local currentTime = tick()
+                                    if currentTime - lastHealTime >= HEAL_COOLDOWN then
                                         healTarget()
-                                        task.wait(8.5)
+                                        lastHealTime = currentTime
+                                        task.wait(1)
                                     end
                                 end
                             end
-                            
                             task.wait(0.5)
                         end
                     end)
@@ -13517,74 +13402,57 @@ run(function()
                 if AutoFly.Enabled then
                     task.spawn(function()
                         while flyRunning and AutoFly.Enabled do
-                            if currentTarget and not hasActivatedFly then
+                            if currentTarget and isPlayerAlive(currentTarget) and not hasActivatedFly then
                                 if isFalling(currentTarget) and isAboveVoid(currentTarget) then
-                                    fallCheckTimer = fallCheckTimer + 0.1
-                                    
-                                    if fallCheckTimer >= 0.5 then
+                                    fallCheckCounter = fallCheckCounter + 1
+                                    if fallCheckCounter >= 3 then
                                         activateFly()
-                                        fallCheckTimer = 0
+                                        fallCheckCounter = 0
                                     end
                                 else
-                                    fallCheckTimer = 0
+                                    fallCheckCounter = 0
                                 end
                             else
-                                fallCheckTimer = 0
+                                fallCheckCounter = 0
                             end
-                            
-                            task.wait(0.1)
+                            task.wait(0.15)
                         end
                     end)
                 end
                 
-                AutoWhisper:Clean(playersService.PlayerAdded:Connect(function()
+                local function updateTeammateList()
                     task.wait(0.5)
-                    local newList = getTeammates(true)
+                    local newList = getTeammateListForDropdown()
                     if PlayerDropdown then
-                        PlayerDropdown:Change(newList)
-                        
-                        if #newList > 0 then
-                            if not PlayerDropdown.Value or PlayerDropdown.Value == "" or not table.find(newList, PlayerDropdown.Value) then
-                                PlayerDropdown:SetValue(newList[1])
+                        pcall(function()
+                            PlayerDropdown:Change(newList)
+                            if #newList > 1 then
+                                local currentValue = PlayerDropdown.Value
+                                if not currentValue or currentValue == "" or currentValue == "None" or not table.find(newList, currentValue) then
+                                    PlayerDropdown:SetValue(newList[2] or "None")
+                                else
+                                    PlayerDropdown:SetValue(currentValue)
+                                end
+                            elseif #newList == 1 then
+                                PlayerDropdown:SetValue("None")
                             end
-                        end
+                        end)
                     end
-                end))
+                end
                 
-                AutoWhisper:Clean(playersService.PlayerRemoving:Connect(function(player)
-                    task.wait(0.5)
-                    local newList = getTeammates(true)
-                    if PlayerDropdown then
-                        PlayerDropdown:Change(newList)
-                        
-                        if #newList > 0 then
-                            if not PlayerDropdown.Value or PlayerDropdown.Value == "" or not table.find(newList, PlayerDropdown.Value) then
-                                PlayerDropdown:SetValue(newList[1])
-                            end
-                        end
+                AutoWhisper:Clean(playersService.PlayerAdded:Connect(updateTeammateList))
+                AutoWhisper:Clean(playersService.PlayerRemoving:Connect(updateTeammateList))
+                AutoWhisper:Clean(lplr:GetAttributeChangedSignal('Team'):Connect(updateTeammateList))
+                
+                AutoWhisper:Clean(lplr.CharacterAdded:Connect(function()
+                    task.wait(2)
+                    if running and AutoFly.Enabled then
+                        hasActivatedFly = false
+                        fallCheckCounter = 0
                     end
-                    
-                    if currentTarget == player then
-                        currentTarget = nil
+                    if running and currentTarget then
                         currentMountedPlayer = nil
                     end
-                end))
-                
-                AutoWhisper:Clean(lplr:GetAttributeChangedSignal('Team'):Connect(function()
-                    task.wait(0.5)
-                    local newList = getTeammates(true)
-                    if PlayerDropdown then
-                        PlayerDropdown:Change(newList)
-                        
-                        if #newList > 0 then
-                            if not PlayerDropdown.Value or PlayerDropdown.Value == "" or not table.find(newList, PlayerDropdown.Value) then
-                                PlayerDropdown:SetValue(newList[1])
-                            end
-                        end
-                    end
-                    currentTarget = nil
-                    currentMountedPlayer = nil
-                    hasActivatedFly = false
                 end))
                 
             else
@@ -13594,44 +13462,65 @@ run(function()
                 currentTarget = nil
                 currentMountedPlayer = nil
                 hasActivatedFly = false
+                fallCheckCounter = 0
                 fallCheckTimer = 0
+                
+                if currentMountedPlayer then
+                    demountOwl()
+                end
             end
         end,
     })
     
     PlayerDropdown = AutoWhisper:CreateDropdown({
         Name = "Bird Target",
-        List = {},
+        List = getTeammateListForDropdown(),
         Function = function(val)
-            if val then
+            if val and val ~= "None" then
                 local targetPlayer = playersService:FindFirstChild(val)
-                if targetPlayer then
+                if targetPlayer and isPlayerAlive(targetPlayer) then
                     currentTarget = targetPlayer
+                    if AutoWhisper.Enabled then
+                        local mountedTo = getMountedPlayer()
+                        if mountedTo ~= targetPlayer then
+                            if mountedTo then
+                                demountOwl()
+                                task.wait(0.3)
+                            end
+                            mountBirdToPlayer(targetPlayer)
+                        end
+                    end
+                end
+            else
+                currentTarget = nil
+                if currentMountedPlayer then
+                    demountOwl()
                 end
             end
         end,
     })
+    
     RefreshButton = AutoWhisper:CreateButton({
         Name = "Refresh Teammates",
         Function = function()
             task.spawn(function()
-                local newList = getTeammates(true)
-                
+                local newList = getTeammateListForDropdown()
                 if PlayerDropdown then
                     pcall(function()
                         PlayerDropdown:Change(newList)
-                        
-                        if #newList > 0 then
-                            if not PlayerDropdown.Value or PlayerDropdown.Value == "" or not table.find(newList, PlayerDropdown.Value) then
-                                PlayerDropdown:SetValue(newList[1])
+                        if #newList > 1 then
+                            local currentValue = PlayerDropdown.Value
+                            if not currentValue or currentValue == "" or currentValue == "None" or not table.find(newList, currentValue) then
+                                PlayerDropdown:SetValue(newList[2] or "None")
                             else
-                                PlayerDropdown:SetValue(PlayerDropdown.Value)
+                                PlayerDropdown:SetValue(currentValue)
                             end
+                        elseif #newList == 1 then
+                            PlayerDropdown:SetValue("None")
                         end
                     end)
                 end
-                
-                notif("AutoWhisper", string.format("teammate list (%d teammates)", #newList), 2)
+                notif("AutoWhisper", string.format("Updated teammate list (%d teammates)", #newList - 1), 2)
             end)
         end,
     })
@@ -13639,8 +13528,6 @@ run(function()
     LimitToItem = AutoWhisper:CreateToggle({
         Name = "Limit to Owl Orb",
         Default = true,
-        Function = function(val)
-        end,
     })
 
     AutoFly = AutoWhisper:CreateToggle({
@@ -13651,32 +13538,29 @@ run(function()
                 if val then
                     flyRunning = true
                     hasActivatedFly = false
-                    fallCheckTimer = 0
-                    
+                    fallCheckCounter = 0
                     task.spawn(function()
                         while flyRunning and AutoFly.Enabled do
-                            if currentTarget and not hasActivatedFly then
+                            if currentTarget and isPlayerAlive(currentTarget) and not hasActivatedFly then
                                 if isFalling(currentTarget) and isAboveVoid(currentTarget) then
-                                    fallCheckTimer = fallCheckTimer + 0.1
-                                    
-                                    if fallCheckTimer >= 0.5 then
+                                    fallCheckCounter = fallCheckCounter + 1
+                                    if fallCheckCounter >= 3 then
                                         activateFly()
-                                        fallCheckTimer = 0
+                                        fallCheckCounter = 0
                                     end
                                 else
-                                    fallCheckTimer = 0
+                                    fallCheckCounter = 0
                                 end
                             else
-                                fallCheckTimer = 0
+                                fallCheckCounter = 0
                             end
-                            
-                            task.wait(0.1)
+                            task.wait(0.15)
                         end
                     end)
                 else
                     flyRunning = false
                     hasActivatedFly = false
-                    fallCheckTimer = 0
+                    fallCheckCounter = 0
                 end
             end
         end,
@@ -13689,28 +13573,26 @@ run(function()
             if AutoHealSlider and AutoHealSlider.Object then
                 AutoHealSlider.Object.Visible = val
             end
-            
-            if AutoWhisper.Enabled then
-                if val then
-                    healRunning = true
-                    task.spawn(function()
-                        while healRunning and AutoHeal.Enabled do
-                            if currentTarget then
-                                local health, maxHealth = getPlayerHealth(currentTarget)
-                                if not (health and maxHealth and maxHealth > 0) then task.wait(0.5) continue end
-                                local healthPercent = (health / maxHealth) * 100
-                                if healthPercent < AutoHealSlider.Value and healthPercent < 90 then
+            if AutoWhisper.Enabled and val then
+                healRunning = true
+                task.spawn(function()
+                    while healRunning and AutoHeal.Enabled do
+                        if currentTarget and isPlayerAlive(currentTarget) then
+                            local healthPercent = getPlayerHealthPercent(currentTarget)
+                            if healthPercent < AutoHealSlider.Value and healthPercent < 90 then
+                                local currentTime = tick()
+                                if currentTime - lastHealTime >= HEAL_COOLDOWN then
                                     healTarget()
-                                    task.wait(8.5)
+                                    lastHealTime = currentTime
+                                    task.wait(1)
                                 end
                             end
-                            
-                            task.wait(0.5)
                         end
-                    end)
-                else
-                    healRunning = false
-                end
+                        task.wait(0.5)
+                    end
+                end)
+            else
+                healRunning = false
             end
         end,
     })
@@ -13722,6 +13604,21 @@ run(function()
         Default = 50,
         Suffix = "%",
     })
+    
+    task.defer(function()
+        if AutoHealSlider and AutoHealSlider.Object then
+            AutoHealSlider.Object.Visible = AutoHeal.Enabled
+        end
+        local initialList = getTeammateListForDropdown()
+        if PlayerDropdown then
+            PlayerDropdown:Change(initialList)
+            if #initialList > 1 then
+                PlayerDropdown:SetValue(initialList[2] or "None")
+            else
+                PlayerDropdown:SetValue("None")
+            end
+        end
+    end)
 end)
 
 run(function()
@@ -18291,64 +18188,163 @@ run(function()
 	local originalProperties = {}
 	local blockMonitorConnections = {}
 	local processedBlocks = {}
-	
+
 	local blockColors = {
-		["clay_white"] = Color3.fromRGB(255, 255, 255),
 		["wool_white"] = Color3.fromRGB(255, 255, 255),
 		["wool_red"] = Color3.fromRGB(255, 50, 50),
 		["wool_green"] = Color3.fromRGB(50, 255, 50),
-		["grass"] = Color3.fromRGB(50, 255, 50),
-		["moss_block"] = Color3.fromRGB(50, 255, 50),
 		["wool_blue"] = Color3.fromRGB(50, 100, 255),
 		["wool_yellow"] = Color3.fromRGB(255, 255, 50),
 		["wool_orange"] = Color3.fromRGB(255, 150, 50),
-		["clay_orange"] = Color3.fromRGB(255, 150, 50),
 		["wool_purple"] = Color3.fromRGB(180, 50, 255),
-		["clay_light_brown"] = Color3.fromRGB(200, 170, 120),
 		["wool_pink"] = Color3.fromRGB(255, 100, 200),
 		["wool_black"] = Color3.fromRGB(50, 50, 50),
 		["wool_cyan"] = Color3.fromRGB(50, 255, 255),
 		["wool_magenta"] = Color3.fromRGB(255, 50, 150),
 		["wool_lime"] = Color3.fromRGB(150, 255, 50),
 		["wool_brown"] = Color3.fromRGB(150, 75, 0),
-		["wood_plank_spruce"] = Color3.fromRGB(222, 184, 135),
 		["wool_light_blue"] = Color3.fromRGB(100, 200, 255),
 		["wool_gray"] = Color3.fromRGB(150, 150, 150),
+		["wool_builder"] = Color3.fromRGB(200, 200, 200),
+		["wool_shear"] = Color3.fromRGB(200, 200, 200),
+		["wool"] = Color3.fromRGB(200, 200, 200),
+		["clay_white"] = Color3.fromRGB(255, 255, 255),
+		["clay_black"] = Color3.fromRGB(50, 50, 50),
+		["clay_blue"] = Color3.fromRGB(50, 100, 255),
+		["clay_dark_brown"] = Color3.fromRGB(100, 60, 30),
+		["clay_dark_green"] = Color3.fromRGB(30, 100, 30),
+		["clay_gray"] = Color3.fromRGB(150, 150, 150),
+		["clay_green"] = Color3.fromRGB(50, 255, 50),
+		["clay_light_brown"] = Color3.fromRGB(200, 170, 120),
+		["clay_light_green"] = Color3.fromRGB(150, 255, 150),
+		["clay_orange"] = Color3.fromRGB(255, 150, 50),
+		["clay_pink"] = Color3.fromRGB(255, 100, 200),
+		["clay_purple"] = Color3.fromRGB(180, 50, 255),
+		["clay_red"] = Color3.fromRGB(255, 50, 50),
+		["clay_tan"] = Color3.fromRGB(210, 180, 140),
+		["clay_yellow"] = Color3.fromRGB(255, 255, 50),
 		["clay"] = Color3.fromRGB(220, 180, 140),
+		["wood_plank_spruce"] = Color3.fromRGB(222, 184, 135),
+		["wood_plank_birch"] = Color3.fromRGB(230, 220, 190),
+		["wood_plank_maple"] = Color3.fromRGB(200, 140, 90),
+		["wood_plank_oak"] = Color3.fromRGB(180, 140, 100),
+		["wood_plank_oak_builder"] = Color3.fromRGB(180, 140, 100),
+		["oak_log"] = Color3.fromRGB(120, 90, 60),
+		["birch_log"] = Color3.fromRGB(220, 210, 180),
+		["spruce_log"] = Color3.fromRGB(100, 75, 50),
+		["hickory_log"] = Color3.fromRGB(140, 100, 60),
 		["wood"] = Color3.fromRGB(180, 140, 100),
 		["stone"] = Color3.fromRGB(150, 150, 150),
+		["stone_brick"] = Color3.fromRGB(140, 140, 140),
+		["stone_brick_builder"] = Color3.fromRGB(140, 140, 140),
+		["stone_slab"] = Color3.fromRGB(160, 160, 160),
+		["stone_pillar"] = Color3.fromRGB(160, 160, 160),
+		["stone_tiles"] = Color3.fromRGB(160, 160, 160),
+		["stone_player_block"] = Color3.fromRGB(150, 150, 150),
 		["andesite"] = Color3.fromRGB(150, 150, 150),
+		["andesite_polished"] = Color3.fromRGB(160, 160, 160),
+		["diorite"] = Color3.fromRGB(220, 220, 220),
+		["diorite_polished"] = Color3.fromRGB(230, 230, 230),
+		["granite"] = Color3.fromRGB(180, 100, 80),
+		["granite_polished"] = Color3.fromRGB(190, 110, 90),
 		["cobblestone"] = Color3.fromRGB(150, 150, 150),
+		["limestone"] = Color3.fromRGB(210, 200, 180),
+		["marble"] = Color3.fromRGB(235, 235, 235),
+		["marble_pillar"] = Color3.fromRGB(235, 235, 235),
+		["slate_brick"] = Color3.fromRGB(90, 95, 100),
+		["slate_tiles"] = Color3.fromRGB(90, 95, 100),
+		["volatile_stone"] = Color3.fromRGB(150, 150, 150),
 		["obsidian"] = Color3.fromRGB(50, 30, 80),
 		["bedrock"] = Color3.fromRGB(80, 80, 80),
 		["tnt"] = Color3.fromRGB(255, 50, 50),
 		["sandstone"] = Color3.fromRGB(220, 200, 150),
+		["sandstone_polished"] = Color3.fromRGB(225, 205, 155),
+		["sandstone_smooth"] = Color3.fromRGB(225, 205, 155),
+		["red_sandstone"] = Color3.fromRGB(190, 110, 60),
+		["red_sandstone_polished"] = Color3.fromRGB(195, 115, 65),
+		["red_sandstone_smooth"] = Color3.fromRGB(195, 115, 65),
 		["sand"] = Color3.fromRGB(220, 200, 150),
-		["wool"] = Color3.fromRGB(200, 200, 200),
-		["bed"] = Color3.fromRGB(200, 50, 50),
+		["red_sand"] = Color3.fromRGB(190, 110, 60),
+		["glass"] = Color3.fromRGB(200, 230, 230),
+		["magic_glass"] = Color3.fromRGB(150, 200, 255),
+		["diamond"] = Color3.fromRGB(100, 220, 220),
+		["diamond_block"] = Color3.fromRGB(100, 220, 220),
+		["diamond_ore"] = Color3.fromRGB(100, 220, 220),
+		["emerald"] = Color3.fromRGB(50, 255, 50),
+		["emerald_block"] = Color3.fromRGB(50, 255, 50),
+		["emerald_ore"] = Color3.fromRGB(50, 255, 50),
+		["iron"] = Color3.fromRGB(220, 220, 220),
+		["iron_block"] = Color3.fromRGB(220, 220, 220),
+		["iron_ore"] = Color3.fromRGB(200, 200, 200),
+		["iron_ore_mesh_block"] = Color3.fromRGB(200, 200, 200),
+		["gold"] = Color3.fromRGB(255, 215, 0),
+		["gold_block"] = Color3.fromRGB(255, 215, 0),
+		["copper_block"] = Color3.fromRGB(184, 115, 51),
+		["steel_block"] = Color3.fromRGB(170, 170, 180),
+		["galactite"] = Color3.fromRGB(100, 80, 160),
+		["galactite_brick"] = Color3.fromRGB(100, 80, 160),
+		["crystal_ore"] = Color3.fromRGB(180, 150, 255),
+		["guilded_iron"] = Color3.fromRGB(230, 200, 100),
+		["ceramic"] = Color3.fromRGB(230, 220, 200),
+		["brick"] = Color3.fromRGB(160, 80, 60),
+		["grass"] = Color3.fromRGB(50, 255, 50),
+		["moss_block"] = Color3.fromRGB(50, 150, 50),
+		["dirt"] = Color3.fromRGB(120, 80, 50),
+		["void_dirt"] = Color3.fromRGB(60, 40, 25),
+		["void_grass"] = Color3.fromRGB(25, 80, 25),
+		["ice"] = Color3.fromRGB(180, 220, 255),
+		["snow"] = Color3.fromRGB(255, 255, 255),
+		["snow_pile"] = Color3.fromRGB(255, 255, 255),
+		["glowstone"] = Color3.fromRGB(255, 240, 150),
+		["magma_block"] = Color3.fromRGB(200, 80, 30),
+		["slime_block"] = Color3.fromRGB(120, 230, 120),
+		["gum_block"] = Color3.fromRGB(255, 150, 200),
+		["invisible_block"] = Color3.fromRGB(255, 255, 255),
+		["void_block"] = Color3.fromRGB(20, 20, 20),
+		["smoke_block"] = Color3.fromRGB(130, 130, 130),
+		["cotton_candy_block"] = Color3.fromRGB(255, 200, 230),
+		["cotton_candy_block_blue"] = Color3.fromRGB(150, 200, 255),
+		["cotton_candy_block_orange"] = Color3.fromRGB(255, 180, 120),
+		["cotton_candy_block_pink"] = Color3.fromRGB(255, 150, 200),
+		["cotton_candy_block_yellow"] = Color3.fromRGB(255, 240, 150),
+		["blue_tile"] = Color3.fromRGB(50, 100, 255),
+		["concrete_green"] = Color3.fromRGB(50, 180, 50),
 		["concrete"] = Color3.fromRGB(180, 180, 180),
+		["bed"] = Color3.fromRGB(200, 50, 50),
+		["og_bed"] = Color3.fromRGB(200, 50, 50),
+		["royale_bed"] = Color3.fromRGB(200, 50, 50),
+		["fake_bed"] = Color3.fromRGB(200, 50, 50),
+		["barrier"] = Color3.fromRGB(255, 0, 0),
+		["ladder"] = Color3.fromRGB(150, 100, 50),
+		["vine_ladder"] = Color3.fromRGB(60, 120, 60),
+		["scaffold"] = Color3.fromRGB(180, 140, 100),
+		["christmas_scaffold"] = Color3.fromRGB(180, 140, 100),
+		["drawbridge"] = Color3.fromRGB(150, 110, 70),
+		["christmas_drawbridge"] = Color3.fromRGB(150, 110, 70),
+		["haybale"] = Color3.fromRGB(230, 200, 100),
+		["purple_hay_bale"] = Color3.fromRGB(180, 50, 255),
 	}
-	
+
 	local cachedColors = {}
-	
+
 	local function getBlockColor(blockName)
 		if cachedColors[blockName] then
 			return cachedColors[blockName]
 		end
-		
+
 		if blockColors[blockName] then
 			cachedColors[blockName] = blockColors[blockName]
 			return blockColors[blockName]
 		end
-		
+
 		local lowerName = blockName:lower()
-		
+
 		if blockColors[lowerName] then
 			cachedColors[blockName] = blockColors[lowerName]
 			return blockColors[lowerName]
 		end
-		
-		if lowerName:find("wool", 1, true) then 
+
+		if lowerName:find("wool", 1, true) then
 			for key, color in pairs(blockColors) do
 				if key:find("wool", 1, true) and lowerName:find(key, 1, true) then
 					cachedColors[blockName] = color
@@ -18358,19 +18354,30 @@ run(function()
 			cachedColors[blockName] = blockColors["wool"]
 			return blockColors["wool"]
 		end
-		
+
+		if lowerName:find("clay", 1, true) then
+			for key, color in pairs(blockColors) do
+				if key:find("clay", 1, true) and lowerName:find(key, 1, true) then
+					cachedColors[blockName] = color
+					return color
+				end
+			end
+			cachedColors[blockName] = blockColors["clay"]
+			return blockColors["clay"]
+		end
+
 		for name, color in pairs(blockColors) do
 			if lowerName:find(name, 1, true) then
 				cachedColors[blockName] = color
 				return color
 			end
 		end
-		
+
 		local defaultColor = Color3.fromRGB(150, 150, 150)
 		cachedColors[blockName] = defaultColor
 		return defaultColor
 	end
-	
+
 	local function cleanupDeadReferences()
 		for block, _ in pairs(originalProperties) do
 			if not block or not block.Parent then
@@ -18379,10 +18386,10 @@ run(function()
 			end
 		end
 	end
-	
+
 	local function simplifyBlock(block)
 		if not block or not block.Parent or processedBlocks[block] then return end
-		
+
 		if not originalProperties[block] then
 			originalProperties[block] = {
 				Material = block.Material,
@@ -18390,7 +18397,7 @@ run(function()
 				TextureID = block:IsA("MeshPart") and block.TextureID or nil,
 				Textures = {}
 			}
-			
+
 			for _, child in block:GetChildren() do
 				if child:IsA("Texture") or child:IsA("Decal") then
 					table.insert(originalProperties[block].Textures, {
@@ -18405,40 +18412,40 @@ run(function()
 				end
 			end
 		end
-		
+
 		block.Material = Enum.Material.SmoothPlastic
 		block.Color = getBlockColor(block.Name)
-		
+
 		for _, child in block:GetChildren() do
 			if child:IsA("Texture") or child:IsA("Decal") then
 				child:Destroy()
 			end
 		end
-		
+
 		if block:IsA("MeshPart") and block.TextureID ~= "" then
 			block.TextureID = ""
 		end
-		
+
 		processedBlocks[block] = true
 	end
-	
+
 	local function restoreBlock(block)
-		if not block or not block.Parent then 
+		if not block or not block.Parent then
 			originalProperties[block] = nil
 			processedBlocks[block] = nil
-			return 
+			return
 		end
-		
+
 		local props = originalProperties[block]
 		if not props then return end
-		
+
 		block.Material = props.Material or Enum.Material.Plastic
 		block.Color = props.Color or Color3.fromRGB(255, 255, 255)
-		
+
 		if props.TextureID and block:IsA("MeshPart") then
 			block.TextureID = props.TextureID
 		end
-		
+
 		for _, textureProps in props.Textures do
 			local newTexture
 			if textureProps.Class == "Texture" then
@@ -18449,46 +18456,69 @@ run(function()
 				newTexture = Instance.new("Decal")
 				newTexture.Color3 = textureProps.Color3 or Color3.fromRGB(255, 255, 255)
 			end
-			
+
 			newTexture.Texture = textureProps.Texture or ""
 			newTexture.Face = textureProps.Face or Enum.NormalId.Front
 			newTexture.Transparency = textureProps.Transparency or 0
 			newTexture.Parent = block
 		end
-		
+
 		originalProperties[block] = nil
 		processedBlocks[block] = nil
 	end
-	
+
 	local function isTargetBlock(obj)
 		if not obj:IsA("BasePart") then return false end
-		
+
 		local name = obj.Name
-		
+
 		if blockColors[name] then return true end
-		
+
 		local lowerName = name:lower()
-		return lowerName:find("wool", 1, true) or 
+		return lowerName:find("wool", 1, true) or
 		       lowerName:find("clay", 1, true) or
-		       lowerName:find("wood", 1, true) or 
-		       lowerName:find("stone", 1, true) or 
+		       lowerName:find("wood", 1, true) or
+		       lowerName:find("log", 1, true) or
+		       lowerName:find("stone", 1, true) or
+		       lowerName:find("brick", 1, true) or
 		       lowerName:find("glass", 1, true) or
-		       lowerName:find("plank", 1, true) or 
-		       lowerName:find("bed", 1, true) or 
+		       lowerName:find("plank", 1, true) or
+		       lowerName:find("bed", 1, true) or
 		       lowerName:find("obsidian", 1, true) or
-		       lowerName:find("sand", 1, true) or 
-		       lowerName:find("end", 1, true) or 
+		       lowerName:find("sand", 1, true) or
 		       lowerName:find("tnt", 1, true) or
-		       lowerName:find("barrier", 1, true) or 
-		       lowerName:find("magic", 1, true) or 
+		       lowerName:find("barrier", 1, true) or
+		       lowerName:find("magic", 1, true) or
 		       lowerName:find("concrete", 1, true) or
-		       lowerName:find("_block", 1, true) or 
+		       lowerName:find("diamond", 1, true) or
+		       lowerName:find("emerald", 1, true) or
+		       lowerName:find("iron", 1, true) or
+		       lowerName:find("gold", 1, true) or
+		       lowerName:find("copper", 1, true) or
+		       lowerName:find("steel", 1, true) or
+		       lowerName:find("ore", 1, true) or
+		       lowerName:find("marble", 1, true) or
+		       lowerName:find("slate", 1, true) or
+		       lowerName:find("granite", 1, true) or
+		       lowerName:find("andesite", 1, true) or
+		       lowerName:find("diorite", 1, true) or
+		       lowerName:find("grass", 1, true) or
+		       lowerName:find("dirt", 1, true) or
+		       lowerName:find("ice", 1, true) or
+		       lowerName:find("snow", 1, true) or
+		       lowerName:find("moss", 1, true) or
+		       lowerName:find("slime", 1, true) or
+		       lowerName:find("scaffold", 1, true) or
+		       lowerName:find("ladder", 1, true) or
+		       lowerName:find("tile", 1, true) or
+		       lowerName:find("cotton_candy", 1, true) or
+		       lowerName:find("_block", 1, true) or
 		       obj:IsA("Seat")
 	end
-	
+
 	local function processExistingBlocks(simplify)
 		local descendants = workspace:GetDescendants()
-		
+
 		task.spawn(function()
 			for i, obj in descendants do
 				if isTargetBlock(obj) then
@@ -18499,21 +18529,21 @@ run(function()
 					end
 				end
 			end
-			
+
 			if not simplify then
 				cleanupDeadReferences()
 			end
 		end)
 	end
-	
+
 	local function setupBlockMonitor(simplify)
 		for _, conn in blockMonitorConnections do
 			conn:Disconnect()
 		end
 		table.clear(blockMonitorConnections)
-		
+
 		if not simplify then return end
-		
+
 		local mainConn = workspace.DescendantAdded:Connect(function(descendant)
 			if isTargetBlock(descendant) then
 				task.defer(function()
@@ -18523,9 +18553,9 @@ run(function()
 				end)
 			end
 		end)
-		
+
 		table.insert(blockMonitorConnections, mainConn)
-		
+
 		local lastCleanup = 0
 		local cleanupConn = runService.Heartbeat:Connect(function()
 			local now = tick()
@@ -18534,10 +18564,10 @@ run(function()
 				cleanupDeadReferences()
 			end
 		end)
-		
+
 		table.insert(blockMonitorConnections, cleanupConn)
 	end
-	
+
 	PotatoMode = vape.Categories.World:CreateModule({
 		Name = 'PotatoMode',
 		Function = function(callback)
@@ -22092,135 +22122,6 @@ run(function()
 		end
 	})
 end)
-
-run(function()
-	pcall(function()
-		vape:Remove(v)
-	end)
-	local ProjectileExploit
-	local InstaKill
-	local Targets
-	local Range
-	local List
-	local rayCheck = RaycastParams.new()
-	rayCheck.FilterType = Enum.RaycastFilterType.Include
-	local projectileRemote = {InvokeServer = function() end}
-	local FireDelays = {}
-	task.spawn(function()
-		projectileRemote = bedwars.Client:Get(remotes.FireProjectile).instance
-	end)
-	
-	local function getAmmo(check)
-		for _, item in store.inventory.inventory.items do
-			if check.ammoItemTypes and table.find(check.ammoItemTypes, item.itemType) then
-				return item.itemType
-			end
-		end
-	end
-	
-	local function getProjectiles()
-		local items = {}
-		for _, item in store.inventory.inventory.items do
-			local proj = bedwars.ItemMeta[item.itemType].projectileSource
-			local ammo = proj and (getAmmo(proj) or InstaKill.Enabled and item.itemType:find('bow') and 'arrow')
-			if ammo then
-				table.insert(items, {
-					item,
-					ammo,
-					proj.projectileType(ammo),
-					proj
-				})
-			end
-		end
-		return items
-	end
-	
-	ProjectileExploit = vape.Categories.Blatant:CreateModule({
-		Name = 'ProjectileExploit',
-		Function = function(callback)
-			if callback then
-				repeat
-					if (workspace:GetServerTimeNow() - bedwars.SwordController.lastAttack) > 0.5 then
-						local ent = entitylib.EntityPosition({
-							Part = 'RootPart',
-							Range = Range.Value,
-							Players = Targets.Players.Enabled,
-							NPCs = Targets.NPCs.Enabled,
-							Wallcheck = Targets.Walls.Enabled
-						})
-	
-						if ent then
-							local pos = entitylib.character.RootPart.Position
-							for _, data in getProjectiles() do
-								local item, ammo, projectile, itemMeta = unpack(data)
-								if (FireDelays[item.itemType] or 0) < tick() then
-									rayCheck.FilterDescendantsInstances = {workspace.Map}
-									local meta = bedwars.ProjectileMeta[projectile]
-									local projSpeed, gravity = meta.launchVelocity, meta.gravitationalAcceleration or 196.2
-									local calc = prediction.SolveTrajectory(pos, projSpeed, gravity, ent.RootPart.Position, ent.RootPart.Velocity, workspace.Gravity, ent.HipHeight, ent.Jumping and 42.6 or nil, rayCheck)
-									if calc then
-										targetinfo.Targets[ent] = tick() + 1
-										local switched = switchItem(item.tool)
-	
-										task.spawn(function()
-											if InstaKill.Enabled and ammo:find('arrow') then
-												ammo = 'volley_arrow'
-											end
-											local dir, id = CFrame.lookAt(pos, calc).LookVector, httpService:GenerateGUID(true)
-											local shootPosition = (CFrame.new(pos, calc) * CFrame.new(Vector3.new(-bedwars.BowConstantsTable.RelX, -bedwars.BowConstantsTable.RelY, -bedwars.BowConstantsTable.RelZ))).Position
-											bedwars.ProjectileController:createLocalProjectile(meta, ammo, projectile, shootPosition, id, dir * projSpeed, {drawDurationSeconds = 1})
-											local res = projectileRemote:InvokeServer(item.tool, ammo, projectile, shootPosition, pos, dir * projSpeed, id, {drawDurationSeconds = 1, shotId = httpService:GenerateGUID(false)}, workspace:GetServerTimeNow() - 0.045)
-											if not res then
-												FireDelays[item.itemType] = tick()
-											else
-												local shoot = itemMeta.launchSound
-												shoot = shoot and shoot[math.random(1, #shoot)] or nil
-												if shoot then
-													bedwars.SoundManager:playSound(shoot)
-												end
-											end
-										end)
-	
-										FireDelays[item.itemType] = InstaKill.Enabled and ammo:find('arrow') and 0 or tick() + itemMeta.fireDelaySec
-										if switched then
-											task.wait(0.05)
-										end
-									end
-								end
-							end
-						end
-					end
-					task.wait(0.1)
-				until not ProjectileExploit.Enabled
-			end
-		end,
-		Tooltip = 'Shoots people around you'
-	})
-	Targets = ProjectileExploit:CreateTargets({
-		Players = true,
-		Walls = true
-	})
-	List = ProjectileExploit:CreateTextList({
-		Name = 'Projectiles',
-		Default = {'arrow', 'snowball'}
-	})
-	Range = ProjectileExploit:CreateSlider({
-		Name = 'Range',
-		Min = 1,
-		Max = 500,
-		Default = 50,
-		Suffix = function(val)
-			return val == 1 and 'stud' or 'studs'
-		end
-	})
-
-	InstaKill = ProjectileExploit:CreateToggle({
-		Name = 'InstaKill',
-		Tooltip = 'Manipulates Projectile Cooldown Values'
-	})
-end)
-
-
 
 run(function()
     local AutoLani
