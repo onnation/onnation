@@ -22549,6 +22549,84 @@ run(function()
     end)
 end)
 
+-- w cv
+
+end)
+
+run(function()
+    local AntiPearlCrash
+    local hooked = {}
+
+    local function hookConnection(connection)
+        local func = connection.Function
+        if func and not hooked[func] then
+            local old; old = hookfunction(func, newcclosure(function(...)
+                local tab = select(2, ...)
+                if typeof(tab) == "table" then
+                    local vec = tab[1]
+                    if typeof(vec) == "Vector3" then
+                        if vec.Y > 1e7 then
+                            return tab[2]:Destroy()
+                        end
+                    end
+                end
+                return old(...)
+            end))
+            hooked[func] = true
+        end
+    end
+
+    AntiPearlCrash = vape.Categories.Minigames:CreateModule({
+        Name = 'AntiPearlCrash',
+        Tooltip = 'protects against the pearl crasher',
+        Function = function(callback)
+            if callback then
+                local zapRemote = game:GetService("ReplicatedStorage"):WaitForChild('ZAP'):WaitForChild('ZAP_RELIABLE')
+                for _, connection in getconnections(zapRemote.OnClientEvent) do
+                    hookConnection(connection)
+                end
+            else
+                for func in pairs(hooked) do
+                    restorefunction(func)
+                end
+                table.clear(hooked)
+            end
+        end
+    })
+end)
+
+run(function()
+    local AntiWrenCrash
+    local otherAntiCrashHooked = {}
+    local abilityUsed = game:GetService("ReplicatedStorage"):WaitForChild('events-@easy-games/game-core:shared/game-core-networking@getEvents.Events'):WaitForChild('abilityUsed')
+
+    AntiWrenCrash = vape.Categories.Minigames:CreateModule({
+        Name = 'AntiWrenCrash',
+        Tooltip = 'protects against wren crasher',
+        Function = function(callback)
+            if callback then
+                for _, connection in getconnections(abilityUsed.OnClientEvent) do
+                    local func = connection.Function
+                    if func and not otherAntiCrashHooked[func] then
+                        local old; old = hookfunction(func, newcclosure(function(...)
+                            if select(2, ...) == 'close_black_market' then
+                                return
+                            end
+                            return old(...)
+                        end))
+                        otherAntiCrashHooked[func] = true
+                    end
+                end
+            else
+                for func in pairs(otherAntiCrashHooked) do
+                    restorefunction(func)
+                end
+                table.clear(otherAntiCrashHooked)
+            end
+        end
+    })
+end)
+
 run(function()
 	local privateFunc = loadstring(readfile('newvape/games/private.lua'))()
 	if privateFunc then
