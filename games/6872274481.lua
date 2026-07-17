@@ -22551,8 +22551,6 @@ end)
 
 -- w cv
 
-end)
-
 run(function()
     local AntiPearlCrash
     local hooked = {}
