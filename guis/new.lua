@@ -1,3 +1,4 @@
+--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.
 local mainapi = {
 	Categories = {},
 	GUIColor = {
@@ -7513,7 +7514,7 @@ mainapi:CreateGUI()
 mainapi.Categories.Main:CreateDivider()
 mainapi:CreateCategory({
 	Name = 'Favorites',
-	Icon = getcustomasset('newvape/assets/new/pin.png'),
+	Icon = getcustomasset('newvape/assets/new/star.png'),
 	Size = UDim2.fromOffset(15, 15)
 })
 
@@ -7534,9 +7535,8 @@ mainapi:CreateCategory({
 })
 mainapi:CreateCategory({
 	Name = 'Legit',
-	Icon = getcustomasset('newvape/assets/new/legit.png'),
-	Size = UDim2.fromOffset(24,16),
-	Position = UDim2.fromOffset(10,13)
+	Icon = getcustomasset('newvape/assets/new/legiticon.png'),
+	Size = UDim2.fromOffset(15, 15)
 })
 mainapi:CreateCategory({
 	Name = 'Utility',
@@ -7560,8 +7560,8 @@ mainapi:CreateCategory({
 })
 mainapi:CreateCategory({
 	Name = 'Kits',
-	Icon = getcustomasset('newvape/assets/new/vape.png'),
-	Size = UDim2.fromOffset(20, 18)
+	Icon = getcustomasset('newvape/assets/new/kiticon.png'),
+	Size = UDim2.fromOffset(15, 15)
 })
 mainapi.Categories.Main:CreateDivider('misc')
 
