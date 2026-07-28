@@ -1,7 +1,7 @@
 local loadstring = function(...)
 	local res, err = loadstring(...)
 	if err and vape then
-		vape:CreateNotification('Vape', 'Failed to load : '..err, 30, 'alert')
+		vape:CreateNotification('SkidV4', 'Failed to load : '..err, 30, 'alert')
 	end
 	return res
 end
@@ -1069,8 +1069,6 @@ run(function()
 	local function getTriggerBotTarget()
 		local char = lplr.Character
 		if not char then return nil end
-
-		-- Get mouse position on screen
 		local mousePos = inputService:GetMouseLocation()
 		local ray = gameCamera:ViewportPointToRay(mousePos.X, mousePos.Y)
 
@@ -7000,180 +6998,124 @@ run(function()
 	local Disguise
 	local Mode
 	local IDBox
-	local desc
-	
-	local function itemAdded(v, manual)
-		if (not v:GetAttribute('Disguise')) and ((v:IsA('Accessory') and (not v:GetAttribute('InvItem')) and (not v:GetAttribute('ArmorSlot'))) or v:IsA('ShirtGraphic') or v:IsA('Shirt') or v:IsA('Pants') or v:IsA('BodyColors') or manual) then
-			repeat
-				task.wait()
-				v.Parent = game
-			until v.Parent == game
-			v:ClearAllChildren()
-			v:Destroy()
+	local cloned = {}
+
+	local function itemAdded(obj, manual)
+		if (obj:IsA('Accessory') or obj:IsA('ShirtGraphic') or obj:IsA('Shirt') or obj:IsA('Pants') or obj:IsA('BodyColors') or manual) and not cloned[obj] then
+			obj:ClearAllChildren()
+			task.defer(obj.Destroy, obj)
 		end
 	end
-	
-	local function characterAdded(char)
+
+	local function localAdded(char)
+		table.clear(cloned)
 		if Mode.Value == 'Character' then
-			task.wait(0.1)
-			char.Character.Archivable = true
-			local clone = char.Character:Clone()
-			repeat
-				if pcall(function()
-					desc = playersService:GetHumanoidDescriptionFromUserId(IDBox.Value == '' and 239702688 or tonumber(IDBox.Value))
-				end) and desc then break end
-				task.wait(1)
-			until not Disguise.Enabled
-			if not Disguise.Enabled then
+			local success, description = pcall(function()
+				return playersService:GetHumanoidDescriptionFromUserId(IDBox.Value == '' and 239702688 or tonumber(IDBox.Value))
+			end)
+
+			if success and Disguise.Enabled then
+				char.Character.Archivable = true
+				local clone = char.Character:Clone()
+				clone.Parent = game
+
+				local original = char.Humanoid:WaitForChild('HumanoidDescription', 2) or {
+					HeightScale = 1,
+					SetEmotes = function() end,
+					SetEquippedEmotes = function() end
+				}
+
+				original.JumpAnimation = description.JumpAnimation
+				description.HeightScale = original.HeightScale
+				clone:FindFirstChildWhichIsA('Humanoid'):ApplyDescriptionResetAsync(description)
+
+				Disguise:Clean(char.Character.ChildAdded:Connect(itemAdded))
+				for _, obj in char.Character:GetChildren() do
+					itemAdded(obj)
+				end
+
+				for _, obj in clone:GetChildren() do
+					cloned[obj] = true
+					if obj:IsA('Accessory') then
+						for _, objd in obj:GetDescendants() do
+							if objd:IsA('Weld') and objd.Part1 then
+								objd.Part1 = char.Character:FindFirstChild(objd.Part1.Name)
+							elseif objd:IsA('RigidConstraint') then
+								objd.Attachment1 = char.Character:FindFirstChild(objd.Attachment1.Name, true)
+							end
+						end
+
+						obj.Parent = char.Character
+					elseif obj:IsA('ShirtGraphic') or obj:IsA('Shirt') or obj:IsA('Pants') or obj:IsA('BodyColors') then
+						obj.Parent = char.Character
+					elseif obj.Name == 'Head' and char.Head:IsA('MeshPart') and (not char.Head:FindFirstChild('FaceControls')) then
+						char.Head.MeshId = obj.MeshId
+					end
+				end
+
+				local face = char.Character:FindFirstChild('face', true)
+				local cface = clone:FindFirstChild('face', true)
+
+				if face then
+					itemAdded(face, true)
+				end
+
+				if cface then
+					cface.Parent = char.Head
+				end
+
+				original:SetEmotes(description:GetEmotes())
+				original:SetEquippedEmotes(description:GetEquippedEmotes())
+				description:Destroy()
 				clone:ClearAllChildren()
 				clone:Destroy()
-				clone = nil
-				if desc then
-					desc:Destroy()
-					desc = nil
-				end
-				return
-			end
-			clone.Parent = game
-	
-			local originalDesc = char.Humanoid:WaitForChild('HumanoidDescription', 2) or {
-				HeightScale = 1,
-				SetEmotes = function() end,
-				SetEquippedEmotes = function() end
-			}
-			originalDesc.JumpAnimation = desc.JumpAnimation
-			desc.HeightScale = originalDesc.HeightScale
-	
-			for _, v in clone:GetChildren() do
-				if v:IsA('Accessory') or v:IsA('ShirtGraphic') or v:IsA('Shirt') or v:IsA('Pants') then
-					v:ClearAllChildren()
-					v:Destroy()
-				end
-			end
-	
-			local savedAnims = {}
-			local animate = char.Character:FindFirstChild('Animate')
-			if animate then
-				for _, v in animate:GetChildren() do
-					local anim = v:FindFirstChildWhichIsA('Animation')
-					if anim then
-						savedAnims[v.Name] = anim.AnimationId
-					end
-				end
-			end
-
-			 clone.Humanoid:ApplyDescriptionClientServer(desc)
-
-			task.wait(0.5)
-			local cloneAnimate = clone:FindFirstChild('Animate')
-			local myAnimate = char.Character:FindFirstChild('Animate')
-			if cloneAnimate and myAnimate then
-				for _, slot in cloneAnimate:GetChildren() do
-					local mySlot = myAnimate:FindFirstChild(slot.Name)
-					if mySlot then
-						local targetAnim = slot:FindFirstChildWhichIsA('Animation')
-						local myAnim = mySlot:FindFirstChildWhichIsA('Animation')
-						if targetAnim and myAnim then
-							pcall(function() myAnim.AnimationId = targetAnim.AnimationId end)
-						end
-					end
-				end
-			end
-
-
-			if animate then
-				for name, id in savedAnims do
-					local slot = animate:FindFirstChild(name)
-					if slot then
-						local anim = slot:FindFirstChildWhichIsA('Animation')
-						if anim then
-							anim.AnimationId = id
-						end
-					end
-				end
-			end
-
-			for _, v in char.Character:GetChildren() do
-				itemAdded(v)
-			end
-			Disguise:Clean(char.Character.ChildAdded:Connect(itemAdded))
-
-	
-			for _, v in clone:GetChildren() do
-				v:SetAttribute('Disguise', true)
-				if v:IsA('Accessory') then
-					for _, v2 in v:GetDescendants() do
-						if v2:IsA('Weld') and v2.Part1 then
-							v2.Part1 = char.Character[v2.Part1.Name]
-						end
-					end
-					v.Parent = char.Character
-				elseif v:IsA('ShirtGraphic') or v:IsA('Shirt') or v:IsA('Pants') or v:IsA('BodyColors') then
-					v.Parent = char.Character
-				elseif v.Name == 'Head' and char.Head:IsA('MeshPart') and (not char.Head:FindFirstChild('FaceControls')) then
-					char.Head.MeshId = v.MeshId
-				end
-			end
-	
-			local localface = char.Character:FindFirstChild('face', true)
-			local cloneface = clone:FindFirstChild('face', true)
-			if localface and cloneface then
-				itemAdded(localface, true)
-				cloneface.Parent = char.Head
-			end
-			pcall(function() originalDesc:SetEmotes(desc:GetEmotes()) end)
-			pcall(function() originalDesc:SetEquippedEmotes(desc:GetEquippedEmotes()) end)
-			clone:ClearAllChildren()
-			clone:Destroy()
-			clone = nil
-			if desc then
-				desc:Destroy()
-				desc = nil
+			elseif description then
+				description:Destroy()
 			end
 		else
-			local data
-			repeat
-				if pcall(function()
-					data = marketplaceService:GetProductInfo(IDBox.Value == '' and 43 or tonumber(IDBox.Value), Enum.InfoType.Bundle)
-				end) then break end
-				task.wait(1)
-			until not Disguise.Enabled
-			if not Disguise.Enabled then
-				if data then
-					table.clear(data)
-					data = nil
-				end
-				return
-			end
-			if data.BundleType == 'AvatarAnimations' then
-				local animate = char.Character:FindFirstChild('Animate')
-				if not animate then return end
-				for _, v in (desc.Items or {}) do
-					local animtype = v.Name:split(' ')[2]:lower()
-					if animtype ~= 'animation' then
-						local suc, res = pcall(function() return game:GetObjects('rbxassetid://'..v.Id) end)
-						if suc then
-							animate[animtype]:FindFirstChildWhichIsA('Animation').AnimationId = res[1]:FindFirstChildWhichIsA('Animation', true).AnimationId
+			local success, data = pcall(function()
+				data = marketplaceService:GetProductInfo(IDBox.Value == '' and 43 or tonumber(IDBox.Value), Enum.InfoType.Bundle)
+			end)
+
+			if success and Disguise.Enabled then
+				if data.BundleType == 'AvatarAnimations' then
+					local animate = char.Character:FindFirstChild('Animate')
+					if not animate then return end
+
+					for _, item in desc.Items do
+						local itemtype = item.Name:split(' ')[2]:lower()
+						if itemtype ~= 'animation' then
+							local suc, obj = pcall(function()
+								return game:GetObjects('rbxassetid://'..item.Id)
+							end)
+
+							if suc then
+								animate[itemtype]:FindFirstChildWhichIsA('Animation').AnimationId = obj[1]:FindFirstChildWhichIsA('Animation', true).AnimationId
+							end
 						end
 					end
+				else
+					notif('Disguise', 'that\'s not an animation pack', 5, 'warning')
 				end
-			else
-				notif('Disguise', 'that\'s not an animation pack', 5, 'warning')
+			elseif type(data) == 'table' then
+				table.clear(data)
 			end
 		end
 	end
-	
+
 	Disguise = vape.Categories.Legit:CreateModule({
 		Name = 'Disguise',
 		Function = function(callback)
 			if callback then
-				Disguise:Clean(entitylib.Events.LocalAdded:Connect(characterAdded))
+				Disguise:Clean(entitylib.Events.LocalAdded:Connect(localAdded))
 				if entitylib.isAlive then
-					characterAdded(entitylib.character)
+					task.spawn(localAdded, entitylib.character)
 				end
+			else
+				table.clear(cloned)
 			end
 		end,
-		Tooltip = 'Changes your character or animation to a specific ID (aniamtions only work if they are in the same server as u)'
+		Tooltip = 'Changes your character or animation to a specific ID (animation packs or userid\'s only)'
 	})
 	Mode = Disguise:CreateDropdown({
 		Name = 'Mode',
@@ -7977,32 +7919,17 @@ run(function()
     local waterY = 0
 
     local function findLowestBlock()
-        local lowest = 99999
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = {lplr.Character, workspace.CurrentCamera}
-
+        local lowest = nil
         for _, v in collectionService:GetTagged('block') do
-            if v and v.Position then
-                local ray = workspace:Raycast(v.Position + Vector3.new(0, 800, 0), Vector3.new(0, -1000, 0), params)
-                if ray and ray.Position.Y < lowest then
-                    lowest = ray.Position.Y
+            if v and v:IsA('BasePart') then
+                local y = v.Position.Y
+                if not lowest or y < lowest then
+                    lowest = y
                 end
             end
         end
-
-        if lowest == 99999 then
-            if entitylib.isAlive and entitylib.character and entitylib.character.RootPart then
-                local pos = entitylib.character.RootPart.Position
-                local ray = workspace:Raycast(pos, Vector3.new(0, -1000, 0), params)
-                if ray then
-                    return ray.Position.Y - 7
-                end
-            end
-            return -20
-        end
-
-        return math.max(lowest - 7, -20)
+        if not lowest then return nil end
+        return lowest - 7
     end
 
     WaterAmbient = vape.Categories.World:CreateModule({
@@ -8011,7 +7938,14 @@ run(function()
         Function = function(callback)
             local terrain = workspace:FindFirstChildOfClass('Terrain')
             if callback then
-                waterY = findLowestBlock()
+                local y
+                for _ = 1, 40 do
+                    if not WaterAmbient.Enabled then return end
+                    y = findLowestBlock()
+                    if y then break end
+                    task.wait(0.25)
+                end
+                waterY = y or -20
 
                 terrain:FillBlock(
                     CFrame.new(0, waterY, 0),
@@ -8489,5 +8423,651 @@ run(function()
         Min = 10,
         Max = 20,
         Default = 20,
+    })
+end)
+
+-- KING MODULES
+run(function()
+    local Ambience
+    local BaseColor
+    local Intensity
+    local Skybox
+    local Atmosphere
+    local Bloom
+    local ColorCorrection
+    local GlowLights
+    local Particles
+    local VolumetricBeams
+    local GlowFloor
+    local Animations
+
+    local effects = {}
+    local connections = {}
+    local animations = {}
+    local glowParts = {}
+    local particleParts = {}
+    local beamParts = {}
+
+    local function buildScheme(h, s, v)
+        local function hsv(hue, sat, val)
+            hue = hue % 1
+            if hue < 0 then hue += 1 end
+            return Color3.fromHSV(hue, math.clamp(sat, 0, 1), math.clamp(val, 0, 1))
+        end
+
+        return {
+            Primary   = hsv(h,        s,        v),
+            Secondary = hsv(h + 0.06, s * 0.9,  v),
+            Tertiary  = hsv(h - 0.04, s * 0.8,  math.min(v + 0.10, 1)),
+            Accent    = hsv(h + 0.02, s * 0.55, math.min(v + 0.25, 1)),
+            Ambient   = hsv(h,        s * 0.8,  v * 0.20),
+            Outdoor   = hsv(h,        s * 0.7,  v * 0.35),
+            SkyTop    = hsv(h,        s * 0.85, v * 0.40),
+            SkyBottom = hsv(h + 0.03, s * 0.4,  math.min(v + 0.30, 1)),
+            Fog       = hsv(h,        s * 0.65, v * 0.60),
+            Shadow    = hsv(h,        s * 0.9,  v * 0.12),
+            Light     = hsv(h,        s * 0.6,  math.min(v + 0.15, 1)),
+        }
+    end
+
+    local currentScheme = buildScheme(Color3.fromRGB(100, 80, 255):ToHSV())
+
+    local function applyLighting(scheme, intensity)
+        intensity = intensity or 1
+
+        lightingService.Ambient = scheme.Ambient
+        lightingService.OutdoorAmbient = scheme.Outdoor
+        lightingService.ColorShift_Top = scheme.SkyTop
+        lightingService.ColorShift_Bottom = scheme.SkyBottom
+        lightingService.FogColor = scheme.Fog
+
+        lightingService.Brightness = 1.2 * intensity
+        lightingService.ExposureCompensation = 0.3 * intensity
+        lightingService.EnvironmentDiffuseScale = 0.8
+        lightingService.EnvironmentSpecularScale = 0.5
+        lightingService.GlobalShadows = true
+        lightingService.FogEnd = 450
+        lightingService.FogStart = 20
+        lightingService.Technology = Enum.Technology.Future
+        lightingService.ClockTime = 14.5
+        lightingService.GeographicLatitude = 45
+    end
+
+    local function createSkybox()
+        if effects.Sky then
+            effects.Sky:Destroy()
+            effects.Sky = nil
+        end
+
+        local sky = Instance.new("Sky")
+        sky.Name = "AmbienceSky"
+        sky.SkyboxBk = "http://www.roblox.com/asset/?id=4147713643"
+        sky.SkyboxDn = "http://www.roblox.com/asset/?id=4147713643"
+        sky.SkyboxFt = "http://www.roblox.com/asset/?id=4147713643"
+        sky.SkyboxLf = "http://www.roblox.com/asset/?id=4147713643"
+        sky.SkyboxRt = "http://www.roblox.com/asset/?id=4147713643"
+        sky.SkyboxUp = "http://www.roblox.com/asset/?id=4147713643"
+        sky.Parent = lightingService
+        effects.Sky = sky
+        return sky
+    end
+
+    local function createAtmosphere(scheme)
+        if effects.Atmosphere then
+            effects.Atmosphere:Destroy()
+            effects.Atmosphere = nil
+        end
+
+        local atmosphere = Instance.new("Atmosphere")
+        atmosphere.Name = "AmbienceAtmosphere"
+        atmosphere.Color = scheme.Primary
+        atmosphere.Decay = scheme.Shadow
+        atmosphere.Density = 0.2
+        atmosphere.Glare = 0.4
+        atmosphere.Haze = 0.3
+        atmosphere.Offset = 0
+        atmosphere.Parent = lightingService
+        effects.Atmosphere = atmosphere
+        return atmosphere
+    end
+
+    local function createBloom(intensity)
+        if effects.Bloom then
+            effects.Bloom:Destroy()
+            effects.Bloom = nil
+        end
+
+        local bloom = Instance.new("BloomEffect")
+        bloom.Name = "AmbienceBloom"
+        bloom.Intensity = 0.5 * intensity
+        bloom.Size = 30
+        bloom.Threshold = 0.8
+        bloom.Parent = lightingService
+        effects.Bloom = bloom
+        return bloom
+    end
+
+    local function createColorCorrection(scheme, intensity)
+        if effects.ColorCorrection then
+            effects.ColorCorrection:Destroy()
+            effects.ColorCorrection = nil
+        end
+
+        local colorCorrection = Instance.new("ColorCorrectionEffect")
+        colorCorrection.Name = "AmbienceColorCorrection"
+        colorCorrection.Brightness = 0.1 * intensity
+        colorCorrection.Contrast = 0.15
+        colorCorrection.Saturation = 0.2
+        colorCorrection.TintColor = scheme.Primary
+        colorCorrection.Parent = lightingService
+        effects.ColorCorrection = colorCorrection
+        return colorCorrection
+    end
+
+    local function createGlowLights(scheme, intensity)
+        for _, v in glowParts do
+            v:Destroy()
+        end
+        table.clear(glowParts)
+
+        if not GlowLights.Enabled then return end
+
+        local positions = {}
+        for i = 1, 20 do
+            local pos = Vector3.new(
+                math.random(-150, 150),
+                math.random(0, 100),
+                math.random(-150, 150)
+            )
+            table.insert(positions, pos)
+        end
+
+        for _, pos in pairs(positions) do
+            local light = Instance.new("PointLight")
+            light.Color = scheme.Light
+            light.Brightness = 0.3 * intensity
+            light.Range = 25
+            light.Shadows = false
+
+            local part = Instance.new("Part")
+            part.Name = "AmbienceLightPart"
+            part.Anchored = true
+            part.CanCollide = false
+            part.Transparency = 1
+            part.Size = Vector3.new(1, 1, 1)
+            part.Position = pos
+            part.Parent = workspace
+
+            light.Parent = part
+            table.insert(glowParts, part)
+            table.insert(glowParts, light)
+
+            if Animations.Enabled then
+                task.spawn(function()
+                    local startTime = tick()
+                    while part and part.Parent and Ambience.Enabled do
+                        local t = (tick() - startTime) % 6 / 6
+                        local radius = 5
+                        local height = 3
+
+                        part.Position = pos + Vector3.new(
+                            math.sin(t * math.pi * 2) * radius,
+                            math.sin(t * math.pi * 2 + 1) * height,
+                            math.cos(t * math.pi * 2) * radius
+                        )
+
+                        light.Brightness = (0.2 + math.sin(t * math.pi * 2 + 2) * 0.15) * intensity
+
+                        task.wait(0.05)
+                    end
+                end)
+            end
+        end
+    end
+
+    local function createParticles(scheme, intensity)
+        for _, v in particleParts do
+            v:Destroy()
+        end
+        table.clear(particleParts)
+
+        if not Particles.Enabled then return end
+
+        for i = 1, 25 do
+            local part = Instance.new("Part")
+            part.Name = "AmbienceParticle"
+            part.Anchored = true
+            part.CanCollide = false
+            part.Transparency = 0.8
+            part.Size = Vector3.new(0.2, 0.2, 0.2)
+            part.Material = Enum.Material.Neon
+            part.Color = scheme.Accent
+
+            local pos = Vector3.new(
+                math.random(-200, 200),
+                math.random(0, 80),
+                math.random(-200, 200)
+            )
+            part.Position = pos
+            part.Parent = workspace
+            table.insert(particleParts, part)
+
+            if Animations.Enabled then
+                task.spawn(function()
+                    local startTime = tick()
+                    local startPos = pos
+
+                    while part and part.Parent and Ambience.Enabled do
+                        local t = (tick() - startTime) % 8 / 8
+                        local radius = 8 + math.random(0, 10)
+                        local height = 3 + math.random(0, 5)
+
+                        part.Position = startPos + Vector3.new(
+                            math.sin(t * math.pi * 2 + i) * radius,
+                            math.sin(t * math.pi * 2 + i * 2) * height,
+                            math.cos(t * math.pi * 2 + i * 1.5) * radius
+                        )
+
+                        part.Transparency = 0.6 + math.sin(t * math.pi * 2 + i * 3) * 0.2
+                        part.Size = Vector3.new(0.2, 0.2, 0.2) + Vector3.new(
+                            math.sin(t * math.pi * 2 + i) * 0.1,
+                            math.sin(t * math.pi * 2 + i * 2) * 0.1,
+                            math.sin(t * math.pi * 2 + i * 1.5) * 0.1
+                        )
+
+                        task.wait(0.1)
+                    end
+                end)
+            end
+        end
+    end
+
+    local function createGlowFloor(scheme, intensity)
+        if effects.GlowFloor then
+            effects.GlowFloor:Destroy()
+            effects.GlowFloor = nil
+        end
+
+        if not GlowFloor.Enabled then return end
+
+        local floor = Instance.new("Part")
+        floor.Name = "AmbienceGlowFloor"
+        floor.Anchored = true
+        floor.CanCollide = false
+        floor.Transparency = 0.9
+        floor.Size = Vector3.new(300, 0.5, 300)
+        floor.Position = Vector3.new(0, -1, 0)
+        floor.Material = Enum.Material.Neon
+        floor.Color = scheme.Secondary
+        floor.Parent = workspace
+        effects.GlowFloor = floor
+
+        if Animations.Enabled then
+            task.spawn(function()
+                local startTime = tick()
+                while floor and floor.Parent and Ambience.Enabled do
+                    local t = (tick() - startTime) % 8 / 8
+
+                    floor.Transparency = 0.8 + math.sin(t * math.pi * 2) * 0.1
+                    floor.Color = Color3.new(
+                        scheme.Primary.R + (scheme.Secondary.R - scheme.Primary.R) * t,
+                        scheme.Primary.G + (scheme.Secondary.G - scheme.Primary.G) * t,
+                        scheme.Primary.B + (scheme.Secondary.B - scheme.Primary.B) * t
+                    )
+
+                    task.wait(0.1)
+                end
+            end)
+        end
+
+        return floor
+    end
+
+    local function createVolumetricBeams(scheme, intensity)
+        for _, v in beamParts do
+            v:Destroy()
+        end
+        table.clear(beamParts)
+
+        if not VolumetricBeams.Enabled then return end
+
+        for i = 1, 12 do
+            local beam = Instance.new("Part")
+            beam.Name = "AmbienceBeam"
+            beam.Anchored = true
+            beam.CanCollide = false
+            beam.Transparency = 0.92
+            beam.Size = Vector3.new(0.5, 80 + math.random(0, 40), 0.5)
+            beam.Material = Enum.Material.Neon
+            beam.Color = scheme.Tertiary
+
+            local pos = Vector3.new(
+                math.random(-120, 120),
+                -30 + math.random(0, 20),
+                math.random(-120, 120)
+            )
+            beam.Position = pos
+            beam.Orientation = Vector3.new(
+                math.random(-10, 10),
+                math.random(-360, 360),
+                math.random(-10, 10)
+            )
+            beam.Parent = workspace
+            table.insert(beamParts, beam)
+
+            if Animations.Enabled then
+                task.spawn(function()
+                    local startTime = tick()
+                    while beam and beam.Parent and Ambience.Enabled do
+                        local t = (tick() - startTime) % 6 / 6
+
+                        beam.Transparency = 0.85 + math.sin(t * math.pi * 2 + i) * 0.07
+                        beam.Color = Color3.new(
+                            scheme.Primary.R + (scheme.Accent.R - scheme.Primary.R) * t,
+                            scheme.Primary.G + (scheme.Accent.G - scheme.Primary.G) * t,
+                            scheme.Primary.B + (scheme.Accent.B - scheme.Primary.B) * t
+                        )
+
+                        task.wait(0.05)
+                    end
+                end)
+            end
+        end
+    end
+
+    local function refreshAmbience()
+        if not Ambience.Enabled then return end
+
+        local scheme = currentScheme
+        local intensity = Intensity.Value
+
+        applyLighting(scheme, intensity)
+
+        if Skybox.Enabled then
+            createSkybox()
+        end
+
+        if Atmosphere.Enabled then
+            createAtmosphere(scheme)
+        end
+
+        if Bloom.Enabled then
+            createBloom(intensity)
+        end
+
+        if ColorCorrection.Enabled then
+            createColorCorrection(scheme, intensity)
+        end
+
+        createGlowLights(scheme, intensity)
+        createParticles(scheme, intensity)
+        createVolumetricBeams(scheme, intensity)
+        createGlowFloor(scheme, intensity)
+    end
+
+    local function cleanupAmbience()
+        for _, v in effects do
+            pcall(function() v:Destroy() end)
+        end
+        table.clear(effects)
+
+        for _, v in glowParts do
+            pcall(function() v:Destroy() end)
+        end
+        table.clear(glowParts)
+
+        for _, v in particleParts do
+            pcall(function() v:Destroy() end)
+        end
+        table.clear(particleParts)
+
+        for _, v in beamParts do
+            pcall(function() v:Destroy() end)
+        end
+        table.clear(beamParts)
+
+        for _, v in connections do
+            pcall(function() v:Disconnect() end)
+        end
+        table.clear(connections)
+
+        for _, v in animations do
+            pcall(function() v:Cancel() end)
+        end
+        table.clear(animations)
+    end
+
+    Ambience = vape.Categories.Render:CreateModule({
+        Name = "Ambience",
+        Function = function(callback)
+            if callback then
+                refreshAmbience()
+            else
+                cleanupAmbience()
+            end
+        end,
+        Tooltip = "Custom color ambient lighting for Bedwars"
+    })
+
+    BaseColor = Ambience:CreateColorSlider({
+        Name = "Base Color",
+        Tooltip = "pick the base color, the whole palette comes from it",
+        Default = Color3.fromRGB(100, 80, 255),
+        Function = function(hue, sat, val)
+            currentScheme = buildScheme(hue, sat, val)
+            if Ambience.Enabled then
+                refreshAmbience()
+            end
+        end
+    })
+
+    Intensity = Ambience:CreateSlider({
+        Name = "Intensity",
+        Min = 0.1,
+        Max = 2,
+        Default = 1,
+        Decimal = 2,
+        Tooltip = "how intense the effects are",
+        Function = function(val)
+            if Ambience.Enabled then
+                refreshAmbience()
+            end
+        end
+    })
+
+    Skybox = Ambience:CreateToggle({
+        Name = "Skybox",
+        Default = true,
+        Tooltip = "changes the skybox",
+        Function = function()
+            if Ambience.Enabled then refreshAmbience() end
+        end
+    })
+
+    Atmosphere = Ambience:CreateToggle({
+        Name = "Atmosphere",
+        Default = true,
+        Tooltip = "adds atmosphere effects",
+        Function = function()
+            if Ambience.Enabled then refreshAmbience() end
+        end
+    })
+
+    Bloom = Ambience:CreateToggle({
+        Name = "Bloom Effect",
+        Default = true,
+        Tooltip = "adds bloom/glow",
+        Function = function()
+            if Ambience.Enabled then refreshAmbience() end
+        end
+    })
+
+    ColorCorrection = Ambience:CreateToggle({
+        Name = "Color Correction",
+        Default = true,
+        Tooltip = "adds color tint",
+        Function = function()
+            if Ambience.Enabled then refreshAmbience() end
+        end
+    })
+
+    GlowLights = Ambience:CreateToggle({
+        Name = "Glow Lights",
+        Default = true,
+        Tooltip = "adds floating glow lights",
+        Function = function()
+            if Ambience.Enabled then refreshAmbience() end
+        end
+    })
+
+    Particles = Ambience:CreateToggle({
+        Name = "Particles",
+        Default = true,
+        Tooltip = "adds floating particles (might lag)",
+        Function = function()
+            if Ambience.Enabled then refreshAmbience() end
+        end
+    })
+
+    VolumetricBeams = Ambience:CreateToggle({
+        Name = "Volumetric Lights",
+        Default = false,
+        Tooltip = "adds light beams (might lag)",
+        Function = function()
+            if Ambience.Enabled then refreshAmbience() end
+        end
+    })
+
+    GlowFloor = Ambience:CreateToggle({
+        Name = "Glow Floor",
+        Default = true,
+        Tooltip = "adds glowing ground",
+        Function = function()
+            if Ambience.Enabled then refreshAmbience() end
+        end
+    })
+
+    Animations = Ambience:CreateToggle({
+        Name = "Animations",
+        Default = true,
+        Tooltip = "enables animated effects",
+        Function = function()
+            if Ambience.Enabled then refreshAmbience() end
+        end
+    })
+
+    Ambience:CreateButton({
+        Name = "Reset Defaults",
+        Function = function()
+            pcall(function() BaseColor:SetValue(Color3.fromRGB(100, 80, 255)) end)
+            currentScheme = buildScheme(Color3.fromRGB(100, 80, 255):ToHSV())
+            Intensity:SetValue(1)
+            Skybox:SetValue(true)
+            Atmosphere:SetValue(true)
+            Bloom:SetValue(true)
+            ColorCorrection:SetValue(true)
+            GlowLights:SetValue(true)
+            Particles:SetValue(true)
+            VolumetricBeams:SetValue(false)
+            GlowFloor:SetValue(true)
+            Animations:SetValue(true)
+            if Ambience.Enabled then
+                refreshAmbience()
+            end
+            notif("Ambience", "reset to default settings!", 3, "info")
+        end
+    })
+end)
+
+run(function()
+    local FalseBan
+    local TargetList
+    local HackMode
+    local SpeedValue
+    local RadiusValue
+    
+    FalseBan = vape.Categories.Blatant:CreateModule({
+        Name = 'FalseBan',
+        Function = function(callback)
+            if callback then
+                FalseBan:Clean(runService.RenderStepped:Connect(function(dt)
+                    local targets = {}
+                    for _, name in ipairs(TargetList.ListEnabled) do
+                        for _, ent in ipairs(entitylib.List) do
+                            if ent.Player and ent.Player.Name == name and ent.RootPart then
+                                table.insert(targets, ent)
+                            end
+                        end
+                    end
+                    
+                    for _, ent in ipairs(targets) do
+                        local root = ent.RootPart
+                        local hum = ent.Humanoid
+                        if root and hum and hum.Health > 0 then
+                            local mode = HackMode.Value
+                            if mode == 'Fly' then
+                                root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, SpeedValue.Value, root.AssemblyLinearVelocity.Z)
+                                root.CFrame = root.CFrame + Vector3.new(0, SpeedValue.Value * dt, 0)
+
+                            elseif mode == 'Spin' then
+                                root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(SpeedValue.Value * dt * 5), 0)
+
+                            elseif mode == 'Orbit' then
+                                if entitylib.isAlive and entitylib.character.RootPart then
+                                    local myPos = entitylib.character.RootPart.Position
+                                    local angle = tick() * (SpeedValue.Value / 20)
+                                    local offset = CFrame.new(math.cos(angle) * RadiusValue.Value, 5, math.sin(angle) * RadiusValue.Value)
+                                    root.CFrame = CFrame.new(myPos) * offset
+                                end
+
+                            elseif mode == 'Shake' then
+                                local shake = Vector3.new(
+                                    (math.random() - 0.5) * SpeedValue.Value,
+                                    (math.random() - 0.5) * SpeedValue.Value,
+                                    (math.random() - 0.5) * SpeedValue.Value
+                                )
+                                root.CFrame = root.CFrame + shake * dt
+
+                            elseif mode == 'PushAway' then
+                                if entitylib.isAlive and entitylib.character.RootPart then
+                                    local dir = (root.Position - entitylib.character.RootPart.Position).Unit
+                                    root.AssemblyLinearVelocity = dir * SpeedValue.Value
+                                end
+                            end
+                        end
+                    end
+                end))
+            end
+        end,
+        Tooltip = 'client side shit that kind made to false ban people'
+    })
+    
+    TargetList = FalseBan:CreateTextList({
+        Name = 'Target Players',
+        Placeholder = 'username',
+    })
+    
+    HackMode = FalseBan:CreateDropdown({
+        Name = 'Hack Mode',
+        List = {'Fly', 'Spin', 'Orbit', 'Shake', 'PushAway'},
+        Default = 'Fly',
+        Tooltip = 'Fly: Upward | Spin: Rotate | Orbit: Circle around you | Shake: Jitter | PushAway: Repel'
+    })
+    
+    SpeedValue = FalseBan:CreateSlider({
+        Name = 'Speed',
+        Min = 1,
+        Max = 200,
+        Default = 50,
+    })
+    
+    RadiusValue = FalseBan:CreateSlider({
+        Name = 'Orbit Radius',
+        Min = 5,
+        Max = 50,
+        Default = 15,
+        Suffix = function(val)
+            return val == 1 and 'stud' or 'studs'
+        end
     })
 end)
