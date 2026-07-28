@@ -283,24 +283,6 @@ entitylib.addEntity = function(char, plr, teamfunc, spawntime)
 				table.insert(entitylib.List, entity)
 				entitylib.Events.EntityAdded:Fire(entity)
 			end
-			--[[table.insert(entity.Connections, char.ChildRemoved:Connect(function(part)
-				if (part == humrootpart or part == hum or part == head) then
-					local found = char:FindFirstChild(part.Name)
-					if found then
-						if part == humrootpart then
-							entity.HumanoidRootPart = found
-							entity.RootPart = found
-							humrootpart = found
-							return
-						elseif part == head then
-							entity.Head = found
-							head = found
-							return
-						end
-					end
-					entitylib.removeEntity(char, plr == lplr)
-				end
-			end))]]
 		end
 
 		entitylib.EntityThreads[char] = nil
@@ -316,7 +298,6 @@ entitylib.removeEntity = function(char, isLocal)
 			end
 			table.clear(entitylib.character.Connections)
 			entitylib.Events.LocalRemoved:Fire(entitylib.character)
-			--table.clear(entitylib.character)
 		end
 
 		return
@@ -342,9 +323,8 @@ entitylib.removeEntity = function(char, isLocal)
 end
 
 entitylib.refreshEntity = function(char, plr, spawntime)
-	local entity = entitylib.getEntity(plr)
 	entitylib.removeEntity(char)
-	entitylib.addEntity(char, plr, entity and entity.TeamCheck or nil, spawntime)
+	entitylib.addEntity(char, plr, nil, spawntime)
 end
 
 entitylib.addPlayer = function(plr)
@@ -406,8 +386,24 @@ entitylib.start = function()
 		end),
 		workspace:GetPropertyChangedSignal('CurrentCamera'):Connect(function()
 			gameCamera = workspace.CurrentCamera or workspace:FindFirstChildWhichIsA('Camera')
+		end),
+		workspace.DescendantAdded:Connect(function(obj)
+			if obj.Name == 'Humanoid' and not playersService:GetPlayerFromCharacter(obj.Parent) then
+				entitylib.refreshEntity(obj.Parent, nil)
+			end
+		end),
+		workspace.DescendantRemoving:Connect(function(obj)
+			if obj.Name == 'Humanoid' and not playersService:GetPlayerFromCharacter(obj.Parent) then
+				entitylib.removeEntity(obj.Parent)
+			end
 		end)
 	}
+
+	for _, obj in workspace:GetDescendants() do
+		if obj.Name == 'Humanoid' and not playersService:GetPlayerFromCharacter(obj.Parent) then
+			entitylib.addEntity(obj.Parent, nil)
+		end
+	end
 
 	for _, player in playersService:GetPlayers() do
 		entitylib.addPlayer(player)
