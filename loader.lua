@@ -57,6 +57,5 @@ if not shared.VapeDeveloper then
 end
 
 return loadstring(downloadFile('newvape/main.lua'), 'main')({
-    Username = shared.ValidatedUsername,
-    _session = shared.SkidV4Session
+	Closet = _args.Closet,
 })
