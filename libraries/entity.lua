@@ -248,6 +248,23 @@ entitylib.addEntity = function(char, plr, teamfunc, spawntime)
 		local humrootpart = hum and waitForChildOfType(hum, 'RootPart', workspace.StreamingEnabled and 9e9 or 10, true)
 		local head = char:WaitForChild('Head', 10) or humrootpart
 
+		if plr == nil then
+			local node = char
+			local isShop = false
+			while node and node ~= workspace do
+				local nm = node.Name:lower()
+				if nm:find('_shop') or nm == 'npchitbox' or nm == 'florist' or nm == 'desertmerchant' then
+					isShop = true
+					break
+				end
+				node = node.Parent
+			end
+			if isShop then
+				entitylib.EntityThreads[char] = nil
+				return
+			end
+		end
+
 		if hum and humrootpart then
 			local entity = {
 				Connections = {},
