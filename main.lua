@@ -50,7 +50,7 @@ local function downloadFile(path, func)
 		local success = false
 		for attempt = 1, 3 do
 			local suc, result = pcall(function()
-				return game:HttpGet('https://raw.githubusercontent.com/onnation/onnation/' .. readfile('newvape/profiles/commit.txt') .. '/' .. select(1, path:gsub('newvape/', '')), true)
+				return game:HttpGet('https://raw.githubusercontent.com/onnation/onnation/' .. readfile('aerov4/profiles/commit.txt') .. '/' .. select(1, path:gsub('aerov4/', '')), true)
 			end)
 			if suc and result ~= '404: Not Found' then
 				res = result
@@ -71,18 +71,18 @@ local function downloadFile(path, func)
 end
 
 local function migrateProfiles()
-	if isfile('newvape/profiles/migrated_placeid.txt') then return end
+	if isfile('aerov4/profiles/migrated_placeid.txt') then return end
 
 	local oldId = tostring(game.GameId)
 	local newId = tostring(game.PlaceId)
 
 	if oldId == newId then
-		pcall(writefile, 'newvape/profiles/migrated_placeid.txt', 'done')
+		pcall(writefile, 'aerov4/profiles/migrated_placeid.txt', 'done')
 		return
 	end
 
 	local suffix = oldId .. '.txt'
-	for _, path in ipairs(listfiles('newvape/profiles')) do
+	for _, path in ipairs(listfiles('aerov4/profiles')) do
 		local name = path:gsub('\\', '/')
 		if name:sub(-#suffix) == suffix then
 			local newPath = name:sub(1, -#suffix - 1) .. newId .. '.txt'
@@ -92,8 +92,8 @@ local function migrateProfiles()
 		end
 	end
 
-	if isfolder('newvape/profiles/premade') then
-		for _, path in ipairs(listfiles('newvape/profiles/premade')) do
+	if isfolder('aerov4/profiles/premade') then
+		for _, path in ipairs(listfiles('aerov4/profiles/premade')) do
 			local name = path:gsub('\\', '/')
 			if name:sub(-#suffix) == suffix then
 				local newPath = name:sub(1, -#suffix - 1) .. newId .. '.txt'
@@ -104,7 +104,7 @@ local function migrateProfiles()
 		end
 	end
 
-	pcall(writefile, 'newvape/profiles/migrated_placeid.txt', 'done')
+	pcall(writefile, 'aerov4/profiles/migrated_placeid.txt', 'done')
 end
 
 pcall(migrateProfiles)
@@ -164,16 +164,16 @@ local function finishLoading()
 	end
 end
 
-if not isfile('newvape/profiles/gui.txt') then
-	writefile('newvape/profiles/gui.txt', 'new')
+if not isfile('aerov4/profiles/gui.txt') then
+	writefile('aerov4/profiles/gui.txt', 'new')
 end
-local gui = readfile('newvape/profiles/gui.txt')
+local gui = readfile('aerov4/profiles/gui.txt')
 
-if not isfolder('newvape/assets/' .. gui) then
-	makefolder('newvape/assets/' .. gui)
+if not isfolder('aerov4/assets/' .. gui) then
+	makefolder('aerov4/assets/' .. gui)
 end
 
-local guiSource = downloadFile('newvape/guis/' .. gui .. '.lua')
+local guiSource = downloadFile('aerov4/guis/' .. gui .. '.lua')
 local guiFunc, guiErr = loadstring(guiSource, 'gui')
 if not guiFunc then
 	local errMsg = tostring(guiErr)
@@ -195,10 +195,10 @@ if not guiFunc then
 end
 vape = guiFunc()
 if not vape then
-	error('[SKIDV4] GUI returned nil file may be corrupted try deleting newvape/guis/' .. gui .. '.lua and reinjecting.')
+	error('[SKIDV4] GUI returned nil file may be corrupted try deleting aerov4/guis/' .. gui .. '.lua and reinjecting.')
 end
 if not vape.Load then
-	if delfile then pcall(function() delfile('newvape/guis/' .. gui .. '.lua') end) end
+	if delfile then pcall(function() delfile('aerov4/guis/' .. gui .. '.lua') end) end
 	error('[SKIDV4] gui file corrupted (missing load) reinject..')
 end
 if not vape.Init and not vape.Load then
@@ -229,18 +229,18 @@ if getgenv().Closet then
 end
 
 if not shared.VapeIndependent then
-	loadstring(downloadFile('newvape/games/universal.lua'), 'universal')()
+	loadstring(downloadFile('aerov4/games/universal.lua'), 'universal')()
 	local gameFileId = (game.GameId == 2619619496) and (game.PlaceId == 6872265039 and 6872265039 or 6872274481) or game.PlaceId
 
-	if isfile('newvape/games/' .. gameFileId .. '.lua') then
-		loadstring(downloadFile('newvape/games/' .. gameFileId .. '.lua'), tostring(gameFileId))(...)
+	if isfile('aerov4/games/' .. gameFileId .. '.lua') then
+		loadstring(downloadFile('aerov4/games/' .. gameFileId .. '.lua'), tostring(gameFileId))(...)
 	else
 		if not shared.VapeDeveloper then
 			local suc, res = pcall(function()
-				return game:HttpGet('https://raw.githubusercontent.com/onnation/onnation/' .. readfile('newvape/profiles/commit.txt') .. '/games/' .. gameFileId .. '.lua', true)
+				return game:HttpGet('https://raw.githubusercontent.com/onnation/onnation/' .. readfile('aerov4/profiles/commit.txt') .. '/games/' .. gameFileId .. '.lua', true)
 			end)
 			if suc and res ~= '404: Not Found' then
-				loadstring(downloadFile('newvape/games/' .. gameFileId .. '.lua'), tostring(gameFileId))(...)
+				loadstring(downloadFile('aerov4/games/' .. gameFileId .. '.lua'), tostring(gameFileId))(...)
 			end
 		end
 	end
