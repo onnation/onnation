@@ -12,8 +12,8 @@ local function deleteRecursive(path, keepPath)
     end
 end
 
-if not isfolder("newvape") then
-    print("folder 'newvape' not found")
+if not isfolder("aerov4") then
+    print("folder 'aerov4' not found")
     return
 end
 
@@ -144,20 +144,20 @@ repeat task.wait() until choice ~= nil or closed
 
 if closed then return end
 
-local keepFullPath = "newvape/profiles"
+local keepFullPath = "aerov4/profiles"
 
 if choice == "keep" then
-    for _, item in ipairs(listfiles("newvape")) do
+    for _, item in ipairs(listfiles("aerov4")) do
         if item ~= keepFullPath then
             deleteRecursive(item, keepFullPath)
         end
     end
 else
-    if isfolder("newvape") then
-        for _, item in ipairs(listfiles("newvape")) do
+    if isfolder("aerov4") then
+        for _, item in ipairs(listfiles("aerov4")) do
             deleteRecursive(item, nil)
         end
-        if delfolder then delfolder("newvape") else pcall(delfolder, "newvape") end
+        if delfolder then delfolder("aerov4") else pcall(delfolder, "aerov4") end
     end
 end
 
